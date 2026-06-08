@@ -32,6 +32,12 @@ type FlowStep =
   | "rules"
   | "review";
 
+type WorkDraft = {
+  startTime: string;
+  endTime: string;
+  dates: string[];
+};
+
 const steps: FlowStep[] = ["welcome", "capacity", "personality", "month", "categories", "review"];
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -79,6 +85,7 @@ export function App() {
   const [state, setState] = useState<PlannerState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState<FlowStep>("welcome");
+  const [workDraft, setWorkDraft] = useState<WorkDraft>({ startTime: "07:30", endTime: "20:30", dates: [] });
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | "unsupported">(
     "Notification" in window ? Notification.permission : "unsupported"
@@ -166,9 +173,9 @@ export function App() {
       {step === "personality" && <PersonalityStep state={state} onUpdate={update} onNext={() => setStep("month")} />}
       {step === "month" && <MonthStep state={state} onUpdate={update} onNext={() => setStep("categories")} />}
       {step === "categories" && <CategoryStep state={state} onSelect={setStep} onFinish={completeSetup} />}
-      {step === "work-time" && <WorkTimeStep state={state} onUpdate={update} onNext={() => setStep("work-dates")} />}
-      {step === "work-dates" && <WorkDatesStep state={state} onUpdate={update} onNext={() => setStep("work-again")} />}
-      {step === "work-again" && <WorkAgainStep onAdd={() => setStep("work-time")} onDone={() => setStep("categories")} />}
+      {step === "work-time" && <WorkTimeStep draft={workDraft} onDraftChange={setWorkDraft} onNext={() => setStep("work-dates")} />}
+      {step === "work-dates" && <WorkDatesStep state={state} draft={workDraft} onDraftChange={setWorkDraft} onUpdate={update} onNext={() => setStep("work-again")} />}
+      {step === "work-again" && <WorkAgainStep onAdd={() => { setWorkDraft({ startTime: "07:30", endTime: "20:30", dates: [] }); setStep("work-time"); }} onDone={() => setStep("categories")} />}
       {step === "appointment" && <FixedEventStep state={state} onUpdate={update} category="appointment" onDone={() => setStep("categories")} />}
       {step === "deadline" && <DeadlineStep state={state} onUpdate={update} onDone={() => setStep("categories")} />}
       {step === "social" && <FixedEventStep state={state} onUpdate={update} category="social" onDone={() => setStep("categories")} />}
@@ -281,25 +288,35 @@ function CategoryStep({ state, onSelect, onFinish }: { state: PlannerState; onSe
   );
 }
 
-function WorkTimeStep({ state, onUpdate, onNext }: { state: PlannerState; onUpdate: (state: PlannerState) => void; onNext: () => void }) {
-  const draft = getWorkDraft(state);
+function WorkTimeStep({ draft, onDraftChange, onNext }: { draft: WorkDraft; onDraftChange: (draft: WorkDraft) => void; onNext: () => void }) {
   return (
     <StepCard eyebrow="Work shifts" title="What time are you working?" copy="Set one shift pattern, then tap every date that uses it.">
       <div className="form-card two">
-        <label>Start time<input type="time" value={draft.startTime} onChange={(e) => onUpdate(setWorkDraft(state, { ...draft, startTime: e.target.value }))} /></label>
-        <label>End time<input type="time" value={draft.endTime} onChange={(e) => onUpdate(setWorkDraft(state, { ...draft, endTime: e.target.value }))} /></label>
+        <label>Start time<input type="time" value={draft.startTime} onChange={(e) => onDraftChange({ ...draft, startTime: e.target.value })} /></label>
+        <label>End time<input type="time" value={draft.endTime} onChange={(e) => onDraftChange({ ...draft, endTime: e.target.value })} /></label>
       </div>
       <button className="bottom-action" onClick={onNext}>Choose work dates</button>
     </StepCard>
   );
 }
 
-function WorkDatesStep({ state, onUpdate, onNext }: { state: PlannerState; onUpdate: (state: PlannerState) => void; onNext: () => void }) {
-  const draft = getWorkDraft(state);
+function WorkDatesStep({
+  state,
+  draft,
+  onDraftChange,
+  onUpdate,
+  onNext
+}: {
+  state: PlannerState;
+  draft: WorkDraft;
+  onDraftChange: (draft: WorkDraft) => void;
+  onUpdate: (state: PlannerState) => void;
+  onNext: () => void;
+}) {
   const selected = draft.dates;
   function toggle(date: string) {
     const dates = selected.includes(date) ? selected.filter((item) => item !== date) : [...selected, date];
-    onUpdate(setWorkDraft(state, { ...draft, dates }));
+    onDraftChange({ ...draft, dates });
   }
   function save() {
     const inputs = selected.map((date) => ({
@@ -311,7 +328,8 @@ function WorkDatesStep({ state, onUpdate, onNext }: { state: PlannerState; onUpd
       category: "work" as Category,
       notes: `${draft.startTime}-${draft.endTime} shift`
     }));
-    onUpdate({ ...setWorkDraft(state, { ...draft, dates: [] }), monthlyInputs: [...state.monthlyInputs, ...inputs] });
+    onUpdate({ ...state, monthlyInputs: [...state.monthlyInputs, ...inputs] });
+    onDraftChange({ ...draft, dates: [] });
     onNext();
   }
   return (
@@ -580,21 +598,6 @@ function MiniList({ items }: { items: string[] }) {
 
 function Loading({ message }: { message: string }) {
   return <main className="mobile-shell loading"><h1>FutureMe</h1><p>{message}</p></main>;
-}
-
-function getWorkDraft(state: PlannerState) {
-  const raw = state.rules.custom.match(/\[work-draft:(.*?)\]/)?.[1];
-  if (!raw) return { startTime: "07:30", endTime: "20:30", dates: [] as string[] };
-  try {
-    return JSON.parse(raw) as { startTime: string; endTime: string; dates: string[] };
-  } catch {
-    return { startTime: "07:30", endTime: "20:30", dates: [] as string[] };
-  }
-}
-
-function setWorkDraft(state: PlannerState, draft: { startTime: string; endTime: string; dates: string[] }) {
-  const cleanCustom = state.rules.custom.replace(/\s*\[work-draft:.*?\]/, "");
-  return { ...state, rules: { ...state.rules, custom: `${cleanCustom} [work-draft:${JSON.stringify(draft)}]`.trim() } };
 }
 
 function toMonthlyInput(form: { title: string; date: string; startTime: string; endTime: string; location: string; notes: string }, category: Category): MonthlyInput {
