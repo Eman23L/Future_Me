@@ -157,19 +157,20 @@ export function App() {
         state={state}
         installPrompt={installPrompt}
         notificationStatus={notificationStatus}
+        onBack={() => setStep("categories")}
         onPlan={() => setStep("categories")}
         onWeeklyCheck={() => setStep("capacity")}
         onComplete={(task) => patchTask(task.id, { completed: true, missed: false })}
-        onReschedule={(task) => patchTask(task.id, { date: isoToday(), startTime: "17:00", endTime: "18:00", missed: false })}
+        onReschedule={(task) => patchTask(task.id, { date: isoToday(), missed: false })}
         onRequestNotifications={requestNotifications}
       />
     );
   }
 
   return (
-    <FlowShell step={step} state={state} onBack={() => setStep(previousStep(step))} installPrompt={installPrompt}>
+    <FlowShell step={step} state={state} onBack={() => setStep(previousStep(step, state))} installPrompt={installPrompt}>
       {step === "welcome" && <Welcome onNext={() => setStep("capacity")} />}
-      {step === "capacity" && <CapacityStep state={state} onUpdate={update} onNext={() => setStep("personality")} />}
+      {step === "capacity" && <CapacityStep state={state} onUpdate={update} onNext={() => setStep(state.setupComplete ? "review" : "personality")} />}
       {step === "personality" && <PersonalityStep state={state} onUpdate={update} onNext={() => setStep("month")} />}
       {step === "month" && <MonthStep state={state} onUpdate={update} onNext={() => setStep("categories")} />}
       {step === "categories" && <CategoryStep state={state} onSelect={setStep} onFinish={completeSetup} />}
@@ -203,7 +204,7 @@ function FlowShell({
   return (
     <main className="mobile-shell flow-screen">
       <header className="flow-top">
-        <button className="ghost-icon" onClick={onBack} disabled={step === "welcome"} aria-label="Back">‹</button>
+        <button className="ghost-icon back-button" onClick={onBack} disabled={step === "welcome"} aria-label="Back">Back</button>
         <div className="progress-track" aria-label={`Step ${progress} of ${total}`}>
           <span style={{ width: `${Math.min(100, (progress / total) * 100)}%` }} />
         </div>
@@ -262,9 +263,9 @@ function MonthStep({ state, onUpdate, onNext }: { state: PlannerState; onUpdate:
   return (
     <StepCard eyebrow="Plan one month" title="Which month are we planning?" copy="Future Me builds one realistic month at a time.">
       <div className="month-picker">
-        <button onClick={() => onUpdate({ ...state, plannedMonth: shiftMonth(state.plannedMonth, -1) })} aria-label="Previous month">‹</button>
+        <button onClick={() => onUpdate({ ...state, plannedMonth: shiftMonth(state.plannedMonth, -1) })} aria-label="Previous month">&lt;</button>
         <strong>{monthLabel(state.plannedMonth)}</strong>
-        <button onClick={() => onUpdate({ ...state, plannedMonth: shiftMonth(state.plannedMonth, 1) })} aria-label="Next month">›</button>
+        <button onClick={() => onUpdate({ ...state, plannedMonth: shiftMonth(state.plannedMonth, 1) })} aria-label="Next month">&gt;</button>
       </div>
       <button className="bottom-action" onClick={onNext}>Use this month</button>
     </StepCard>
@@ -476,6 +477,7 @@ function DailyApp({
   state,
   installPrompt,
   notificationStatus,
+  onBack,
   onPlan,
   onWeeklyCheck,
   onComplete,
@@ -485,6 +487,7 @@ function DailyApp({
   state: PlannerState;
   installPrompt: any;
   notificationStatus: NotificationPermission | "unsupported";
+  onBack: () => void;
   onPlan: () => void;
   onWeeklyCheck: () => void;
   onComplete: (task: PlannedTask) => void;
@@ -498,6 +501,7 @@ function DailyApp({
   return (
     <main className="mobile-shell dashboard">
       <header className="dashboard-top">
+        <button className="ghost-icon back-button dashboard-back" onClick={onBack} aria-label="Back">Back</button>
         <div>
           <p className="pill">FutureMe</p>
           <h1>Today</h1>
@@ -524,7 +528,8 @@ function DailyApp({
             <div className={`dot ${task.category}`} />
             <div>
               <strong>{task.title}</strong>
-              <span>{task.startTime} - {task.endTime} · {categoryLabels[task.category]}</span>
+              <span className="task-time">{task.startTime} - {task.endTime}</span>
+              <span className="task-category">{categoryLabels[task.category]}</span>
               {task.notes && <p>{task.notes}</p>}
             </div>
             <button onClick={() => onComplete(task)} disabled={task.completed}>{task.completed ? "Done" : "Complete"}</button>
@@ -613,17 +618,19 @@ function toMonthlyInput(form: { title: string; date: string; startTime: string; 
 }
 
 function notificationMessage(personality: NotificationPersonality, title: string, time: string) {
+  const when = time === "soon" || time.startsWith("in ") ? time : `at ${time}`;
   const messages: Record<NotificationPersonality, string> = {
-    bestie: `Hey girlie pop, ${title} is ${time}. Let's get ready.`,
-    gentle: `Soft reminder, ${title} is ${time}. Start getting ready when you can.`,
-    coach: `${title} ${time}. Get ready and follow the plan.`,
-    professional: `Reminder: ${title} is scheduled ${time}. Please prepare accordingly.`,
-    chaos: `BESTIE. ${title} is ${time}. Shoes. Water. Go mode.`
+    bestie: `Hey girlie pop, ${title} is ${when}. Let's get ready.`,
+    gentle: `Soft reminder, ${title} is ${when}. Start getting ready when you can.`,
+    coach: `${title} ${when}. Get ready and follow the plan.`,
+    professional: `Reminder: ${title} is scheduled ${when}. Please prepare accordingly.`,
+    chaos: `BESTIE. ${title} is ${when}. Shoes. Water. Go mode.`
   };
   return messages[personality];
 }
 
-function previousStep(step: FlowStep): FlowStep {
+function previousStep(step: FlowStep, state: PlannerState): FlowStep {
+  if (state.setupComplete && (step === "capacity" || step === "categories")) return "review";
   const order: FlowStep[] = ["welcome", "capacity", "personality", "month", "categories"];
   const index = order.indexOf(step);
   if (index > 0) return order[index - 1];
