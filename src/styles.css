@@ -464,7 +464,7 @@ textarea {
 }
 
 .form-card.two {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
 }
 
 .form-card.solo {
@@ -1097,6 +1097,10 @@ label {
   }
 
   .category-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .form-card.two {
     grid-template-columns: 1fr 1fr;
   }
 }
