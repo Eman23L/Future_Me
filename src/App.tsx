@@ -507,7 +507,7 @@ function FlowShell({
         </header>
       )}
       <div className="flow-content">{children}</div>
-      {showHeader && <p className="storage-note">Saved on this device for {monthLabel(state.plannedMonth)}.</p>}
+      {showHeader && <p className="storage-note">Saved on this device for {monthLabel(state.plannedMonth)}. UI fix v2</p>}
     </main>
   );
 }

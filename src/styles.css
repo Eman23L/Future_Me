@@ -474,7 +474,20 @@ textarea {
 }
 
 .sleep-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
   margin-top: 18px;
+}
+
+.sleep-card label {
+  width: 100%;
+  min-width: 0;
+}
+
+.sleep-card input {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 label {
@@ -1102,5 +1115,24 @@ label {
 
   .form-card.two {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .sleep-card {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 479px) {
+  .sleep-card,
+  .form-card.two.sleep-card {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .sleep-card label,
+  .sleep-card input {
+    width: 100%;
+    min-width: 0;
   }
 }
