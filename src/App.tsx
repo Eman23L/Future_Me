@@ -8,7 +8,6 @@ import type {
   NotificationPersonality,
   PlannedTask,
   PlannerState,
-  PresetRule,
   Routine,
   RoutineFrequency
 } from "./models/types";
@@ -17,19 +16,26 @@ import { categoryLabels } from "./models/types";
 const service = new PlannerService();
 
 type FlowStep =
-  | "welcome"
-  | "capacity"
-  | "personality"
+  | "start"
+  | "loading"
   | "month"
-  | "categories"
   | "work-time"
   | "work-dates"
   | "work-again"
-  | "appointment"
-  | "deadline"
-  | "social"
-  | "routine"
-  | "rules"
+  | "appointment-details"
+  | "appointment-date"
+  | "appointment-again"
+  | "deadline-details"
+  | "deadline-date"
+  | "deadline-again"
+  | "social-details"
+  | "social-date"
+  | "social-again"
+  | "flexible"
+  | "capacity"
+  | "personality"
+  | "generating"
+  | "calendar"
   | "review";
 
 type WorkDraft = {
@@ -38,68 +44,175 @@ type WorkDraft = {
   dates: string[];
 };
 
-const steps: FlowStep[] = ["welcome", "capacity", "personality", "month", "categories", "review"];
+type FixedDraft = {
+  title: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  notes: string;
+  date: string;
+  importance: string;
+  effort: string;
+};
+
+type FlexibleConfig = {
+  id: Category;
+  title: string;
+  detail: string;
+  icon: string;
+  active: boolean;
+  durationMinutes: number;
+  durationOptions: Array<{ label: string; value: number }>;
+  frequency: RoutineFrequency;
+  frequencyOptions: RoutineFrequency[];
+  effort: EffortLevel;
+  preferredDay: number;
+  preferredTime: string;
+  priority: Routine["priority"];
+};
+
+const setupSteps: FlowStep[] = ["start", "loading", "month", "flexible", "capacity", "personality", "generating", "review"];
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const capacities: Array<{ id: CapacityMode; title: string; detail: string }> = [
-  { id: "high", title: "High Capacity", detail: "A fuller week with gym, study, cleaning, errands and meal prep where they fit." },
-  { id: "normal", title: "Normal Capacity", detail: "Balanced planning with realistic limits on demanding tasks." },
-  { id: "tired", title: "Tired", detail: "Lighter structure, recovery space and fewer high-effort blocks." },
-  { id: "survival", title: "Survival Mode", detail: "Only essentials: work, deadlines, food, sleep, basic care and recovery." }
+  { id: "high", title: "I have plenty in me", detail: "A fuller week with room for the rituals you care about." },
+  { id: "normal", title: "I feel steady", detail: "A balanced plan with space to move through the week calmly." },
+  { id: "tired", title: "I need a softer week", detail: "Lighter days, fewer demanding tasks and more recovery space." },
+  { id: "survival", title: "Just the essentials", detail: "Only what matters most: fixed plans, sleep, food, care and recovery." }
 ];
 
 const personalities: Array<{ id: NotificationPersonality; title: string; sample: string }> = [
   { id: "bestie", title: "Bestie Mode", sample: "Hey girlie pop, gym is in about an hour. Let's get ready." },
   { id: "gentle", title: "Gentle Mode", sample: "Soft reminder, gym is coming up in about an hour. Start getting ready when you can." },
   { id: "coach", title: "Coach Mode", sample: "Gym in 1 hour. Get your kit ready and follow the plan." },
-  { id: "professional", title: "Professional Mode", sample: "Reminder: Gym is scheduled in 1 hour. Please prepare accordingly." },
-  { id: "chaos", title: "Chaos Friend Mode", sample: "BESTIE. Gym is in an hour. Shoes. Water. Go mode." }
+  { id: "professional", title: "Professional", sample: "Reminder: Gym is scheduled in 1 hour. Please prepare accordingly." },
+  { id: "chaos", title: "Chaos Friend", sample: "BESTIE. Gym is in an hour. Shoes. Water. Go mode." }
 ];
 
-const categoryCards: Array<{ id: Category | "rules"; title: string; detail: string; step: FlowStep }> = [
-  { id: "work", title: "Work", detail: "Batch-add shifts by time pattern.", step: "work-time" },
-  { id: "appointment", title: "Appointments", detail: "Doctor, dentist, hair, meetings.", step: "appointment" },
-  { id: "deadline", title: "Deadlines", detail: "Assignments and prep blocks.", step: "deadline" },
-  { id: "social", title: "Social events", detail: "Plans with times and places.", step: "social" },
-  { id: "gym", title: "Gym / routines", detail: "Repeating habits and routines.", step: "routine" },
-  { id: "cleaning", title: "Cleaning", detail: "Weekly home structure.", step: "routine" },
-  { id: "meal-prep", title: "Meal prep", detail: "Food routines before busy days.", step: "routine" },
-  { id: "food-shop", title: "Food shop", detail: "Add your regular shop.", step: "routine" },
-  { id: "self-care", title: "Self-care", detail: "Protected care and reset blocks.", step: "routine" },
-  { id: "custom", title: "Custom", detail: "Anything else Future Me should know.", step: "appointment" },
-  { id: "rules", title: "Personal rules", detail: "Boundaries for the planner.", step: "rules" }
+const fixedCards: Array<{ id: Category; title: string; detail: string; step: FlowStep }> = [
+  { id: "work", title: "Work", detail: "Add the shift patterns you already know.", step: "work-time" },
+  { id: "appointment", title: "Appointments", detail: "Doctor, dentist, hair, meetings and life admin.", step: "appointment-details" },
+  { id: "deadline", title: "Deadlines", detail: "Important dates that need protecting.", step: "deadline-details" },
+  { id: "social", title: "Social plans", detail: "The people and places already in your month.", step: "social-details" }
 ];
 
-const presetRules: Array<{ id: PresetRule; label: string }> = [
-  { id: "never-gym-after-long-shift", label: "Never gym after a 12-hour shift" },
-  { id: "no-study-after-8", label: "No study after 8pm" },
-  { id: "protect-sunday-evenings", label: "Protect Sunday evenings" },
-  { id: "recovery-after-3-shifts", label: "Recovery day after 3 consecutive shifts" },
-  { id: "meal-prep-before-work", label: "Meal prep before work days" },
-  { id: "avoid-more-than-2-demanding", label: "Avoid more than 2 demanding tasks per day" },
-  { id: "no-high-effort-after-long-shifts", label: "No high-effort tasks after long shifts" },
-  { id: "one-lighter-evening", label: "Keep one lighter evening per week" }
+const defaultFlexibleConfigs: FlexibleConfig[] = [
+  {
+    id: "gym",
+    title: "Gym routine",
+    detail: "I will tuck movement into open space without pushing you after long shifts.",
+    icon: "G",
+    active: true,
+    durationMinutes: 60,
+    durationOptions: durationOptions([60, 90, 120]),
+    frequency: "3x-weekly",
+    frequencyOptions: ["weekly", "2x-weekly", "3x-weekly", "4x-weekly"],
+    effort: "high",
+    preferredDay: 1,
+    preferredTime: "17:30",
+    priority: "medium"
+  },
+  {
+    id: "cleaning",
+    title: "Cleaning",
+    detail: "A gentle home reset placed where your day still has breathing room.",
+    icon: "C",
+    active: true,
+    durationMinutes: 60,
+    durationOptions: durationOptions([30, 60, 90, 120]),
+    frequency: "weekly",
+    frequencyOptions: ["weekly", "2x-weekly"],
+    effort: "medium",
+    preferredDay: 6,
+    preferredTime: "11:30",
+    priority: "medium"
+  },
+  {
+    id: "meal-prep",
+    title: "Meal prep",
+    detail: "Food prep fitted around work, deadlines and your energy.",
+    icon: "M",
+    active: true,
+    durationMinutes: 120,
+    durationOptions: durationOptions([60, 90, 120, 180]),
+    frequency: "weekly",
+    frequencyOptions: ["weekly", "2x-weekly"],
+    effort: "medium",
+    preferredDay: 0,
+    preferredTime: "16:00",
+    priority: "high"
+  },
+  {
+    id: "food-shop",
+    title: "Food shop",
+    detail: "A simple shop placed before the week starts to feel full.",
+    icon: "F",
+    active: true,
+    durationMinutes: 60,
+    durationOptions: durationOptions([30, 60, 90, 120]),
+    frequency: "weekly",
+    frequencyOptions: ["weekly", "2x-weekly"],
+    effort: "low",
+    preferredDay: 6,
+    preferredTime: "10:00",
+    priority: "high"
+  },
+  {
+    id: "self-care",
+    title: "Self-care",
+    detail: "Protected reset time for heavier days and softer evenings.",
+    icon: "S",
+    active: true,
+    durationMinutes: 60,
+    durationOptions: durationOptions([30, 60, 90, 120]),
+    frequency: "2x-weekly",
+    frequencyOptions: ["weekly", "2x-weekly", "3x-weekly"],
+    effort: "low",
+    preferredDay: 2,
+    preferredTime: "20:00",
+    priority: "high"
+  }
 ];
 
 export function App() {
   const [state, setState] = useState<PlannerState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [step, setStep] = useState<FlowStep>("welcome");
+  const [step, setStep] = useState<FlowStep>("start");
   const [workDraft, setWorkDraft] = useState<WorkDraft>({ startTime: "07:30", endTime: "20:30", dates: [] });
+  const [fixedDraft, setFixedDraft] = useState<FixedDraft>(emptyFixedDraft(""));
+  const [flexibleConfigs, setFlexibleConfigs] = useState<FlexibleConfig[]>(defaultFlexibleConfigs);
+  const [realToday, setRealToday] = useState(isoToday());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | "unsupported">(
     "Notification" in window ? Notification.permission : "unsupported"
   );
 
   useEffect(() => {
-    service.load()
+    const today = isoToday();
+    const monthKey = today.slice(0, 7);
+    setRealToday(today);
+    service.load(monthKey)
       .then(async (loaded) => {
-        const withPlan = loaded.plannedTasks.length === 0 ? await service.generate(loaded) : loaded;
-        setStep(withPlan.setupComplete ? "review" : "welcome");
+        const withCurrentMonth = loaded.plannedMonth === monthKey ? loaded : { ...loaded, plannedMonth: monthKey, setupComplete: false };
+        const withPlan = withCurrentMonth.setupComplete && withCurrentMonth.plannedTasks.length === 0 ? await service.generate(withCurrentMonth) : withCurrentMonth;
+        setFlexibleConfigs(configsFromRoutines(withPlan.routines));
+        setSelectedDate(null);
+        setStep(initialStepForPlan(withPlan, today));
         setState(withPlan);
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : "Unable to load planner data."));
   }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const today = isoToday();
+      if (today === realToday) return;
+      setRealToday(today);
+      void handleDateRollover(today);
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, [realToday, state, selectedDate]);
 
   useEffect(() => {
     const listener = (event: Event) => {
@@ -115,17 +228,164 @@ export function App() {
     await service.save(next);
   }
 
-  async function generate(next = state) {
-    if (!next) return;
-    const generated = await service.generate(next);
-    setState(generated);
+  async function handleDateRollover(today: string) {
+    const monthKey = today.slice(0, 7);
+    if (!state || state.plannedMonth !== monthKey) {
+      const loaded = await service.load(monthKey);
+      const withPlan = loaded.setupComplete && loaded.plannedTasks.length === 0 ? await service.generate(loaded) : loaded;
+      setState(withPlan);
+      setFlexibleConfigs(configsFromRoutines(withPlan.routines));
+      setSelectedDate(null);
+      setStep(initialStepForPlan(withPlan, today));
+      return;
+    }
+
+    if (!selectedDate && state.setupComplete) {
+      setStep(initialStepForPlan(state, today));
+    }
+  }
+
+  function beginSetup() {
+    setStep("loading");
+    window.setTimeout(() => setStep("month"), 850);
+  }
+
+  async function changePlanMonth(monthKey: string, completedStep: FlowStep = "review") {
+    const loaded = await service.load(monthKey);
+    const withPlan = loaded.setupComplete && loaded.plannedTasks.length === 0 ? await service.generate(loaded) : loaded;
+    setState(withPlan);
+    setFlexibleConfigs(configsFromRoutines(withPlan.routines));
+    setFixedDraft(emptyFixedDraft(withPlan.plannedMonth));
+    setWorkDraft({ startTime: "07:30", endTime: "20:30", dates: [] });
+    setSelectedDate(withPlan.setupComplete && withPlan.plannedMonth !== realToday.slice(0, 7) ? `${withPlan.plannedMonth}-01` : null);
+    setStep(withPlan.setupComplete ? completedStep : "month");
+  }
+
+  function openFixedFlow(nextStep: FlowStep) {
+    setFixedDraft(emptyFixedDraft(state?.plannedMonth ?? isoToday().slice(0, 7)));
+    setStep(nextStep);
+  }
+
+  function saveWorkDates() {
+    if (!state || workDraft.dates.length === 0) return;
+    const inputs = workDraft.dates.map((date) => ({
+      id: crypto.randomUUID(),
+      title: "Work shift",
+      date,
+      startTime: workDraft.startTime,
+      endTime: workDraft.endTime,
+      category: "work" as Category,
+      fixed: true,
+      effort: "high" as EffortLevel,
+      priority: "essential" as const,
+      notes: `${workDraft.startTime}-${workDraft.endTime} shift`
+    }));
+    update({ ...state, monthlyInputs: [...state.monthlyInputs, ...inputs] });
+    setWorkDraft({ ...workDraft, dates: [] });
+    setStep("work-again");
+  }
+
+  function saveFixedEvent(category: "appointment" | "social" | "deadline") {
+    if (!state || !fixedDraft.title.trim() || !fixedDraft.date) return;
+    const input: MonthlyInput = category === "deadline"
+      ? {
+        id: crypto.randomUUID(),
+        title: fixedDraft.title,
+        date: fixedDraft.date,
+        startTime: fixedDraft.startTime,
+        endTime: addMinutes(fixedDraft.startTime, 30),
+        category,
+        fixed: true,
+        effort: effortFromLabel(fixedDraft.effort),
+        priority: "essential",
+        notes: `${fixedDraft.importance} importance. ${fixedDraft.effort} effort. ${fixedDraft.notes}`.trim()
+      }
+      : {
+        id: crypto.randomUUID(),
+        title: fixedDraft.title,
+        date: fixedDraft.date,
+        startTime: fixedDraft.startTime,
+        endTime: fixedDraft.endTime || addMinutes(fixedDraft.startTime, 60),
+        category,
+        fixed: true,
+        effort: category === "appointment" ? "medium" : "low",
+        priority: "essential",
+        notes: [fixedDraft.location, fixedDraft.notes].filter(Boolean).join(" - ")
+      };
+    update({ ...state, monthlyInputs: [...state.monthlyInputs, input] });
+    setFixedDraft(emptyFixedDraft(state.plannedMonth));
+    setStep(category === "appointment" ? "appointment-again" : category === "deadline" ? "deadline-again" : "social-again");
+  }
+
+  async function saveFlexibleAndContinue() {
+    if (!state) return;
+    const flexibleRoutineIds = new Set(defaultFlexibleConfigs.map((config) => config.id));
+    const preserved = state.routines.filter((routine) => !flexibleRoutineIds.has(routine.category));
+    const routines = flexibleConfigs
+      .filter((config) => config.active)
+      .map((config): Routine => ({
+        id: `routine-${config.id}`,
+        name: config.title,
+        frequency: config.frequency,
+        preferredDay: config.preferredDay,
+        preferredTime: config.preferredTime,
+        effort: config.effort,
+        category: config.id,
+        active: true,
+        durationMinutes: config.durationMinutes,
+        priority: config.priority
+      }));
+    await update({ ...state, routines: [...preserved, ...routines] });
+    setStep("capacity");
   }
 
   async function completeSetup() {
     if (!state) return;
-    const next = { ...state, setupComplete: true };
-    await update(next);
-    await generate(next);
+    setStep("generating");
+    const weekStart = startOfWeek(realToday);
+    const weekKey = isoWeekKey(realToday);
+    const withSetup = {
+      ...state,
+      setupComplete: true,
+      capacityChecks: [
+        ...state.capacityChecks.filter((check) => (check.weekKey ?? check.weekStart) !== weekKey),
+        {
+          id: `capacity-${weekKey}`,
+          weekKey,
+          weekStart,
+          capacity: state.capacity,
+          createdAt: new Date().toISOString()
+        }
+      ]
+    };
+    await update(withSetup);
+    await delay(650);
+    const generated = await service.generate(withSetup);
+    setState(generated);
+    setSelectedDate(generated.plannedMonth === realToday.slice(0, 7) ? null : `${generated.plannedMonth}-01`);
+    setStep("review");
+  }
+
+  async function completeWeeklyCapacityCheck() {
+    if (!state) return;
+    const weekStart = startOfWeek(realToday);
+    const weekKey = isoWeekKey(realToday);
+    const next = {
+      ...state,
+      capacityChecks: [
+        ...state.capacityChecks.filter((check) => (check.weekKey ?? check.weekStart) !== weekKey),
+        {
+          id: `capacity-${weekKey}`,
+          weekKey,
+          weekStart,
+          capacity: state.capacity,
+          createdAt: new Date().toISOString()
+        }
+      ]
+    };
+    const generated = await service.generate(next);
+    setState(generated);
+    setSelectedDate(null);
     setStep("review");
   }
 
@@ -142,46 +402,79 @@ export function App() {
     const permission = await Notification.requestPermission();
     setNotificationStatus(permission);
     if (permission === "granted") {
-      new Notification("Future Me reminders are on", {
+      new Notification("FutureMe reminders are on", {
         body: notificationMessage(state?.settings.notificationPersonality ?? "gentle", "Gym", "in 1 hour")
       });
     }
   }
 
   if (loadError) return <Loading message={loadError} />;
-  if (!state) return <Loading message="Loading your planner..." />;
+  if (!state) return <Loading message="FutureMe" />;
+
+  const visibleDate = selectedDate ?? realToday;
 
   if (state.setupComplete && step === "review") {
     return (
       <DailyApp
         state={state}
+        visibleDate={visibleDate}
+        realToday={realToday}
+        isViewingToday={selectedDate === null || selectedDate === realToday}
         installPrompt={installPrompt}
         notificationStatus={notificationStatus}
-        onBack={() => setStep("categories")}
-        onPlan={() => setStep("categories")}
+        onDateChange={setSelectedDate}
+        onToday={() => setSelectedDate(null)}
+        onBack={() => setStep("month")}
+        onPlan={() => setStep("calendar")}
         onWeeklyCheck={() => setStep("capacity")}
         onComplete={(task) => patchTask(task.id, { completed: true, missed: false })}
-        onReschedule={(task) => patchTask(task.id, { date: isoToday(), missed: false })}
         onRequestNotifications={requestNotifications}
       />
     );
   }
 
+  if (state.setupComplete && step === "calendar") {
+    return (
+      <MonthCalendarApp
+        state={state}
+        realToday={realToday}
+        installPrompt={installPrompt}
+        onBack={() => setStep("review")}
+        onMonthChange={(monthKey) => changePlanMonth(monthKey, "calendar")}
+        onSelectDate={(date) => {
+          setSelectedDate(date === realToday ? null : date);
+          setStep("review");
+        }}
+        onToday={() => {
+          setSelectedDate(null);
+          setStep("review");
+        }}
+        onWeeklyCheck={() => setStep("capacity")}
+      />
+    );
+  }
+
   return (
-    <FlowShell step={step} state={state} onBack={() => setStep(previousStep(step, state))} installPrompt={installPrompt}>
-      {step === "welcome" && <Welcome onNext={() => setStep("capacity")} />}
-      {step === "capacity" && <CapacityStep state={state} onUpdate={update} onNext={() => setStep(state.setupComplete ? "review" : "personality")} />}
-      {step === "personality" && <PersonalityStep state={state} onUpdate={update} onNext={() => setStep("month")} />}
-      {step === "month" && <MonthStep state={state} onUpdate={update} onNext={() => setStep("categories")} />}
-      {step === "categories" && <CategoryStep state={state} onSelect={setStep} onFinish={completeSetup} />}
+    <FlowShell step={step} state={state} installPrompt={installPrompt} onBack={() => setStep(previousStep(step))}>
+      {step === "start" && <StartScreen onSetup={beginSetup} />}
+      {step === "loading" && <FutureMeLoading />}
+      {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onNext={() => setStep("flexible")} />}
       {step === "work-time" && <WorkTimeStep draft={workDraft} onDraftChange={setWorkDraft} onNext={() => setStep("work-dates")} />}
-      {step === "work-dates" && <WorkDatesStep state={state} draft={workDraft} onDraftChange={setWorkDraft} onUpdate={update} onNext={() => setStep("work-again")} />}
-      {step === "work-again" && <WorkAgainStep onAdd={() => { setWorkDraft({ startTime: "07:30", endTime: "20:30", dates: [] }); setStep("work-time"); }} onDone={() => setStep("categories")} />}
-      {step === "appointment" && <FixedEventStep state={state} onUpdate={update} category="appointment" onDone={() => setStep("categories")} />}
-      {step === "deadline" && <DeadlineStep state={state} onUpdate={update} onDone={() => setStep("categories")} />}
-      {step === "social" && <FixedEventStep state={state} onUpdate={update} category="social" onDone={() => setStep("categories")} />}
-      {step === "routine" && <RoutineStep state={state} onUpdate={update} onDone={() => setStep("categories")} />}
-      {step === "rules" && <RulesStep state={state} onUpdate={update} onDone={() => setStep("categories")} />}
+      {step === "work-dates" && <WorkDatesStep state={state} draft={workDraft} onDraftChange={setWorkDraft} onSave={saveWorkDates} />}
+      {step === "work-again" && <AgainStep title="Do you have a different work pattern this month?" addLabel="Add another work pattern" doneLabel="Done with work" onAdd={() => { setWorkDraft({ startTime: "07:30", endTime: "20:30", dates: [] }); setStep("work-time"); }} onDone={() => setStep("month")} />}
+      {step === "appointment-details" && <FixedDetailsStep kind="appointment" draft={fixedDraft} onDraftChange={setFixedDraft} onNext={() => setStep("appointment-date")} />}
+      {step === "appointment-date" && <SingleDateStep state={state} heading="Which day is this appointment?" draft={fixedDraft} onDraftChange={setFixedDraft} onSave={() => saveFixedEvent("appointment")} />}
+      {step === "appointment-again" && <AgainStep title="Do you have another appointment to add?" addLabel="Add another appointment" doneLabel="Done with appointments" onAdd={() => setStep("appointment-details")} onDone={() => setStep("month")} />}
+      {step === "deadline-details" && <FixedDetailsStep kind="deadline" draft={fixedDraft} onDraftChange={setFixedDraft} onNext={() => setStep("deadline-date")} />}
+      {step === "deadline-date" && <SingleDateStep state={state} heading="When is this due?" draft={fixedDraft} onDraftChange={setFixedDraft} onSave={() => saveFixedEvent("deadline")} />}
+      {step === "deadline-again" && <AgainStep title="Do you have another deadline to add?" addLabel="Add another deadline" doneLabel="Done with deadlines" onAdd={() => setStep("deadline-details")} onDone={() => setStep("month")} />}
+      {step === "social-details" && <FixedDetailsStep kind="social" draft={fixedDraft} onDraftChange={setFixedDraft} onNext={() => setStep("social-date")} />}
+      {step === "social-date" && <SingleDateStep state={state} heading="Which day is this social event?" draft={fixedDraft} onDraftChange={setFixedDraft} onSave={() => saveFixedEvent("social")} />}
+      {step === "social-again" && <AgainStep title="Do you have another social event to add?" addLabel="Add another social event" doneLabel="Done with social events" onAdd={() => setStep("social-details")} onDone={() => setStep("month")} />}
+      {step === "flexible" && <FlexibleActivitiesStep configs={flexibleConfigs} onChange={setFlexibleConfigs} onNext={saveFlexibleAndContinue} />}
+      {step === "capacity" && <CapacityStep state={state} onUpdate={update} onNext={state.setupComplete ? completeWeeklyCapacityCheck : () => setStep("personality")} />}
+      {step === "personality" && <PersonalityStep state={state} onUpdate={update} onNext={completeSetup} />}
+      {step === "generating" && <GenerateStep />}
     </FlowShell>
   );
 }
@@ -199,37 +492,243 @@ function FlowShell({
   installPrompt: any;
   onBack: () => void;
 }) {
-  const progress = Math.max(1, steps.indexOf(step) + 1);
-  const total = steps.length;
+  const progress = Math.max(1, setupSteps.indexOf(step) + 1);
+  const total = setupSteps.length;
+  const showHeader = step !== "loading" && step !== "generating";
   return (
     <main className="mobile-shell flow-screen">
-      <header className="flow-top">
-        <button className="ghost-icon back-button" onClick={onBack} disabled={step === "welcome"} aria-label="Back">Back</button>
-        <div className="progress-track" aria-label={`Step ${progress} of ${total}`}>
-          <span style={{ width: `${Math.min(100, (progress / total) * 100)}%` }} />
-        </div>
-        <button className="ghost-icon" aria-label="Install app" onClick={() => installPrompt?.prompt()} disabled={!installPrompt}>+</button>
-      </header>
+      {showHeader && (
+        <header className="flow-top">
+          <button className="ghost-icon back-button" onClick={onBack} disabled={step === "start"} aria-label="Back">Back</button>
+          <div className="progress-track" aria-label={`Step ${progress} of ${total}`}>
+            <span style={{ width: `${Math.min(100, (progress / total) * 100)}%` }} />
+          </div>
+          <button className="ghost-icon" aria-label="Install app" onClick={() => installPrompt?.prompt()} disabled={!installPrompt}>+</button>
+        </header>
+      )}
       <div className="flow-content">{children}</div>
-      <p className="storage-note">Saved on this device for {monthLabel(state.plannedMonth)}.</p>
+      {showHeader && <p className="storage-note">Saved on this device for {monthLabel(state.plannedMonth)}.</p>}
     </main>
   );
 }
 
-function Welcome({ onNext }: { onNext: () => void }) {
+function StartScreen({ onSetup }: { onSetup: () => void }) {
   return (
     <section className="welcome-card">
       <p className="pill">FutureMe</p>
-      <h1>Let's plan your month</h1>
-      <p>Tell me about your life and I'll sort the rest.</p>
-      <button className="bottom-action" onClick={onNext}>Get started</button>
+      <h1>Welcome to your gentle plan</h1>
+      <p>Tell me what is already in your month, and I will shape the rest around your time, energy and care.</p>
+      <button className="bottom-action" onClick={onSetup}>Set up</button>
     </section>
+  );
+}
+
+function FutureMeLoading() {
+  return (
+    <section className="loading-screen">
+      <div className="logo-mark">FM</div>
+      <h1>FutureMe</h1>
+      <p>Getting your month ready...</p>
+    </section>
+  );
+}
+
+function GenerateStep() {
+  return (
+    <section className="loading-screen">
+      <div className="logo-mark">FM</div>
+      <h1>Softly shaping your month...</h1>
+      <p>I am placing the fixed things first, then fitting care around them.</p>
+    </section>
+  );
+}
+
+function MonthSetupStep({
+  state,
+  onUpdate,
+  onMonthChange,
+  onSelect,
+  onNext
+}: {
+  state: PlannerState;
+  onUpdate: (state: PlannerState) => void;
+  onMonthChange: (monthKey: string) => void;
+  onSelect: (step: FlowStep) => void;
+  onNext: () => void;
+}) {
+  return (
+    <StepCard eyebrow="Your first month" title="Let's build your first month" copy="Add what is already fixed. I will gently work around it.">
+      <div className="month-picker">
+        <button onClick={() => onMonthChange(shiftMonth(state.plannedMonth, -1))} aria-label="Previous month">&lt;</button>
+        <strong>{monthLabel(state.plannedMonth)}</strong>
+        <button onClick={() => onMonthChange(shiftMonth(state.plannedMonth, 1))} aria-label="Next month">&gt;</button>
+      </div>
+      <div className="category-grid">
+        {fixedCards.map((card) => (
+          <button key={card.id} className="category-card" onClick={() => onSelect(card.step)}>
+            <span className={`category-dot ${card.id}`} />
+            <strong>{card.title}</strong>
+            <span>{statusForCategory(state, card.id)}</span>
+            <small>{card.detail}</small>
+          </button>
+        ))}
+      </div>
+      <div className="form-card two sleep-card">
+        <label>Wake-up time<input type="time" value={state.settings.wakeTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, wakeTime: event.target.value } })} /></label>
+        <label>Bedtime<input type="time" value={state.settings.bedTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, bedTime: event.target.value } })} /></label>
+      </div>
+      <button className="bottom-action" onClick={onNext}>Continue</button>
+    </StepCard>
+  );
+}
+
+function WorkTimeStep({ draft, onDraftChange, onNext }: { draft: WorkDraft; onDraftChange: (draft: WorkDraft) => void; onNext: () => void }) {
+  return (
+    <StepCard eyebrow="Work" title="When are your shifts?" copy="Add one shift pattern, then choose every date it belongs to.">
+      <div className="form-card two">
+        <label>Start time<input type="time" value={draft.startTime} onChange={(event) => onDraftChange({ ...draft, startTime: event.target.value })} /></label>
+        <label>End time<input type="time" value={draft.endTime} onChange={(event) => onDraftChange({ ...draft, endTime: event.target.value })} /></label>
+      </div>
+      <button className="bottom-action" onClick={onNext}>Choose the days</button>
+    </StepCard>
+  );
+}
+
+function WorkDatesStep({ state, draft, onDraftChange, onSave }: { state: PlannerState; draft: WorkDraft; onDraftChange: (draft: WorkDraft) => void; onSave: () => void }) {
+  function toggle(date: string) {
+    const dates = draft.dates.includes(date) ? draft.dates.filter((item) => item !== date) : [...draft.dates, date];
+    onDraftChange({ ...draft, dates });
+  }
+  return (
+    <StepCard eyebrow="Work days" title="Which days hold this shift?" copy="Tap every matching date so FutureMe can protect that time.">
+      <p className="time-banner">{draft.startTime}-{draft.endTime}</p>
+      <MonthGrid month={state.plannedMonth} selected={draft.dates} onToggle={toggle} />
+      <button className="bottom-action" onClick={onSave} disabled={draft.dates.length === 0}>Save these days</button>
+    </StepCard>
+  );
+}
+
+function FixedDetailsStep({
+  kind,
+  draft,
+  onDraftChange,
+  onNext
+}: {
+  kind: "appointment" | "deadline" | "social";
+  draft: FixedDraft;
+  onDraftChange: (draft: FixedDraft) => void;
+  onNext: () => void;
+}) {
+  const isDeadline = kind === "deadline";
+  const title = kind === "appointment" ? "Add an appointment" : kind === "deadline" ? "Add a deadline" : "Add a social plan";
+  const placeholder = kind === "appointment" ? "Doctor's appointment" : kind === "deadline" ? "Assignment due" : "Dinner";
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!draft.title.trim()) return;
+    onNext();
+  }
+  return (
+    <StepCard eyebrow={isDeadline ? "Deadline" : categoryLabels[kind]} title={title} copy="Share the details first, then choose where it sits in your month.">
+      <form className="form-card" onSubmit={submit}>
+        <label>{isDeadline ? "Deadline title" : kind === "appointment" ? "Appointment title" : "Event title"}<input value={draft.title} onChange={(event) => onDraftChange({ ...draft, title: event.target.value })} placeholder={placeholder} /></label>
+        <label>{isDeadline ? "Due time optional" : "Start time"}<input type="time" value={draft.startTime} onChange={(event) => onDraftChange({ ...draft, startTime: event.target.value })} /></label>
+        {!isDeadline && <label>End time optional<input type="time" value={draft.endTime} onChange={(event) => onDraftChange({ ...draft, endTime: event.target.value })} /></label>}
+        {!isDeadline && <label>Location optional<input value={draft.location} onChange={(event) => onDraftChange({ ...draft, location: event.target.value })} /></label>}
+        {isDeadline && <label>Importance<select value={draft.importance} onChange={(event) => onDraftChange({ ...draft, importance: event.target.value })}><option>High</option><option>Medium</option><option>Low</option></select></label>}
+        {isDeadline && <label>Estimated effort<select value={draft.effort} onChange={(event) => onDraftChange({ ...draft, effort: event.target.value })}><option>High</option><option>Medium</option><option>Low</option></select></label>}
+        <label>Notes optional<textarea value={draft.notes} onChange={(event) => onDraftChange({ ...draft, notes: event.target.value })} /></label>
+        <button type="submit">Choose the day</button>
+      </form>
+    </StepCard>
+  );
+}
+
+function SingleDateStep({
+  state,
+  heading,
+  draft,
+  onDraftChange,
+  onSave
+}: {
+  state: PlannerState;
+  heading: string;
+  draft: FixedDraft;
+  onDraftChange: (draft: FixedDraft) => void;
+  onSave: () => void;
+}) {
+  return (
+    <StepCard eyebrow="Calendar" title={heading} copy={draft.title}>
+      <MonthGrid month={state.plannedMonth} selected={draft.date ? [draft.date] : []} onToggle={(date) => onDraftChange({ ...draft, date })} />
+      <button className="bottom-action" onClick={onSave} disabled={!draft.date}>Save it</button>
+    </StepCard>
+  );
+}
+
+function AgainStep({
+  title,
+  addLabel,
+  doneLabel,
+  onAdd,
+  onDone
+}: {
+  title: string;
+  addLabel: string;
+  doneLabel: string;
+  onAdd: () => void;
+  onDone: () => void;
+}) {
+  return (
+    <StepCard eyebrow="Saved" title={title} copy="Add another if you need to, or come back to your month overview.">
+      <div className="choice-stack">
+        <button className="choice selected" onClick={onAdd}><strong>{addLabel}</strong><span>Add another moment to protect.</span></button>
+        <button className="choice" onClick={onDone}><strong>{doneLabel}</strong><span>Return to your month overview.</span></button>
+      </div>
+    </StepCard>
+  );
+}
+
+function FlexibleActivitiesStep({ configs, onChange, onNext }: { configs: FlexibleConfig[]; onChange: (configs: FlexibleConfig[]) => void; onNext: () => void }) {
+  function patch(id: Category, patchConfig: Partial<FlexibleConfig>) {
+    onChange(configs.map((config) => config.id === id ? { ...config, ...patchConfig } : config));
+  }
+  return (
+    <StepCard eyebrow="Care and routines" title="What would you like me to fit in?" copy="Turn on the rituals you want FutureMe to place gently around your fixed plans.">
+      <div className="flexible-stack">
+        {configs.map((config) => (
+          <article key={config.id} className={config.active ? "flex-card selected" : "flex-card"}>
+            <button className="flex-main" onClick={() => patch(config.id, { active: !config.active })} aria-pressed={config.active}>
+              <span className={`activity-icon ${config.id}`}>{config.icon}</span>
+              <span>
+                <strong>{config.title}</strong>
+                <small>{config.detail}</small>
+              </span>
+              <span className={config.active ? "toggle on" : "toggle"}><span /></span>
+            </button>
+            {config.active && (
+              <>
+                <div className="pill-row" aria-label={`${config.title} duration`}>
+                  {config.durationOptions.map((option) => (
+                    <button key={option.value} className={config.durationMinutes === option.value ? "option-pill selected" : "option-pill"} onClick={() => patch(config.id, { durationMinutes: option.value })}>{option.label}</button>
+                  ))}
+                </div>
+                <div className="pill-row" aria-label={`${config.title} frequency`}>
+                  {config.frequencyOptions.map((frequency) => (
+                    <button key={frequency} className={config.frequency === frequency ? "option-pill selected" : "option-pill"} onClick={() => patch(config.id, { frequency })}>{frequencyLabel(frequency)}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </article>
+        ))}
+      </div>
+      <button className="bottom-action" onClick={onNext}>Continue</button>
+    </StepCard>
   );
 }
 
 function CapacityStep({ state, onUpdate, onNext }: { state: PlannerState; onUpdate: (state: PlannerState) => void; onNext: () => void }) {
   return (
-    <StepCard eyebrow="Weekly reality check" title="How's your energy this week?" copy="This helps me decide how much to schedule for you this week.">
+    <StepCard eyebrow="Energy check" title="How are you feeling this week?" copy="This helps FutureMe choose a pace that supports you instead of overfilling your days.">
       <div className="choice-stack">
         {capacities.map((capacity) => (
           <button key={capacity.id} className={state.capacity === capacity.id ? "choice selected" : "choice"} onClick={() => onUpdate({ ...state, capacity: capacity.id })}>
@@ -245,7 +744,7 @@ function CapacityStep({ state, onUpdate, onNext }: { state: PlannerState; onUpda
 
 function PersonalityStep({ state, onUpdate, onNext }: { state: PlannerState; onUpdate: (state: PlannerState) => void; onNext: () => void }) {
   return (
-    <StepCard eyebrow="Reminders" title="How should I talk to you in reminders?" copy="The wording can change, even while push notifications stay basic in V1.">
+    <StepCard eyebrow="Your reminder voice" title="How should I talk to you?" copy="Choose the tone that will feel supportive when FutureMe checks in.">
       <div className="choice-stack">
         {personalities.map((personality) => (
           <button key={personality.id} className={state.settings.notificationPersonality === personality.id ? "choice selected" : "choice"} onClick={() => onUpdate({ ...state, settings: { ...state.settings, notificationPersonality: personality.id } })}>
@@ -254,308 +753,163 @@ function PersonalityStep({ state, onUpdate, onNext }: { state: PlannerState; onU
           </button>
         ))}
       </div>
-      <button className="bottom-action" onClick={onNext}>Continue</button>
-    </StepCard>
-  );
-}
-
-function MonthStep({ state, onUpdate, onNext }: { state: PlannerState; onUpdate: (state: PlannerState) => void; onNext: () => void }) {
-  return (
-    <StepCard eyebrow="Plan one month" title="Which month are we planning?" copy="Future Me builds one realistic month at a time.">
-      <div className="month-picker">
-        <button onClick={() => onUpdate({ ...state, plannedMonth: shiftMonth(state.plannedMonth, -1) })} aria-label="Previous month">&lt;</button>
-        <strong>{monthLabel(state.plannedMonth)}</strong>
-        <button onClick={() => onUpdate({ ...state, plannedMonth: shiftMonth(state.plannedMonth, 1) })} aria-label="Next month">&gt;</button>
-      </div>
-      <button className="bottom-action" onClick={onNext}>Use this month</button>
-    </StepCard>
-  );
-}
-
-function CategoryStep({ state, onSelect, onFinish }: { state: PlannerState; onSelect: (step: FlowStep) => void; onFinish: () => void }) {
-  return (
-    <StepCard eyebrow="Life inputs" title="What do you need to add this month?" copy="Add the real-life commitments. Future Me will build the actual plan.">
-      <div className="category-grid">
-        {categoryCards.map((card) => (
-          <button key={card.title} className="category-card" onClick={() => onSelect(card.step)}>
-            <strong>{card.title}</strong>
-            <span>{card.detail}</span>
-          </button>
-        ))}
-      </div>
-      <SummaryStrip state={state} />
-      <button className="bottom-action" onClick={onFinish}>Build my month</button>
-    </StepCard>
-  );
-}
-
-function WorkTimeStep({ draft, onDraftChange, onNext }: { draft: WorkDraft; onDraftChange: (draft: WorkDraft) => void; onNext: () => void }) {
-  return (
-    <StepCard eyebrow="Work shifts" title="What time are you working?" copy="Set one shift pattern, then tap every date that uses it.">
-      <div className="form-card two">
-        <label>Start time<input type="time" value={draft.startTime} onChange={(e) => onDraftChange({ ...draft, startTime: e.target.value })} /></label>
-        <label>End time<input type="time" value={draft.endTime} onChange={(e) => onDraftChange({ ...draft, endTime: e.target.value })} /></label>
-      </div>
-      <button className="bottom-action" onClick={onNext}>Choose work dates</button>
-    </StepCard>
-  );
-}
-
-function WorkDatesStep({
-  state,
-  draft,
-  onDraftChange,
-  onUpdate,
-  onNext
-}: {
-  state: PlannerState;
-  draft: WorkDraft;
-  onDraftChange: (draft: WorkDraft) => void;
-  onUpdate: (state: PlannerState) => void;
-  onNext: () => void;
-}) {
-  const selected = draft.dates;
-  function toggle(date: string) {
-    const dates = selected.includes(date) ? selected.filter((item) => item !== date) : [...selected, date];
-    onDraftChange({ ...draft, dates });
-  }
-  function save() {
-    const inputs = selected.map((date) => ({
-      id: crypto.randomUUID(),
-      title: "Work shift",
-      date,
-      startTime: draft.startTime,
-      endTime: draft.endTime,
-      category: "work" as Category,
-      notes: `${draft.startTime}-${draft.endTime} shift`
-    }));
-    onUpdate({ ...state, monthlyInputs: [...state.monthlyInputs, ...inputs] });
-    onDraftChange({ ...draft, dates: [] });
-    onNext();
-  }
-  return (
-    <StepCard eyebrow="Work dates" title="Which days are you working this shift?" copy={`${draft.startTime}-${draft.endTime}. Tap multiple days in ${monthLabel(state.plannedMonth)}.`}>
-      <MonthGrid month={state.plannedMonth} selected={selected} onToggle={toggle} />
-      <button className="bottom-action" onClick={save} disabled={selected.length === 0}>Save these shifts</button>
-    </StepCard>
-  );
-}
-
-function WorkAgainStep({ onAdd, onDone }: { onAdd: () => void; onDone: () => void }) {
-  return (
-    <StepCard eyebrow="Work shifts" title="Are you working any different times this month?" copy="Add another pattern for different start and end times.">
-      <div className="choice-stack">
-        <button className="choice selected" onClick={onAdd}><strong>Add another shift pattern</strong><span>Use a different time and select more dates.</span></button>
-        <button className="choice" onClick={onDone}><strong>Done with work</strong><span>Return to monthly categories.</span></button>
-      </div>
-    </StepCard>
-  );
-}
-
-function FixedEventStep({
-  state,
-  onUpdate,
-  category,
-  onDone
-}: {
-  state: PlannerState;
-  onUpdate: (state: PlannerState) => void;
-  category: "appointment" | "social";
-  onDone: () => void;
-}) {
-  const [form, setForm] = useState({ title: "", date: `${state.plannedMonth}-01`, startTime: "10:00", endTime: "", location: "", notes: "" });
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!form.title.trim()) return;
-    onUpdate({
-      ...state,
-      monthlyInputs: [...state.monthlyInputs, toMonthlyInput(form, category)]
-    });
-    setForm({ ...form, title: "", notes: "", location: "" });
-  }
-  return (
-    <StepCard eyebrow={categoryLabels[category]} title={category === "appointment" ? "Add an appointment" : "Add a social event"} copy="Save one, then add another if you need to.">
-      <form className="form-card" onSubmit={submit}>
-        <label>Title<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={category === "appointment" ? "Doctor's appointment" : "Dinner with friends"} /></label>
-        <label>Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></label>
-        <label>Start time<input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></label>
-        <label>End time optional<input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></label>
-        <label>Location optional<input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></label>
-        <label>Notes optional<textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
-        <button type="submit">Save</button>
-      </form>
-      <button className="bottom-action secondary-action" onClick={onDone}>Done</button>
-    </StepCard>
-  );
-}
-
-function DeadlineStep({ state, onUpdate, onDone }: { state: PlannerState; onUpdate: (state: PlannerState) => void; onDone: () => void }) {
-  const [form, setForm] = useState({ title: "", date: `${state.plannedMonth}-01`, startTime: "17:00", importance: "High", effort: "Medium", notes: "" });
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!form.title.trim()) return;
-    onUpdate({
-      ...state,
-      monthlyInputs: [...state.monthlyInputs, {
-        id: crypto.randomUUID(),
-        title: form.title,
-        date: form.date,
-        startTime: form.startTime,
-        endTime: addMinutes(form.startTime, 30),
-        category: "deadline",
-        notes: `${form.importance} importance. ${form.effort} effort. ${form.notes}`.trim()
-      }]
-    });
-    setForm({ ...form, title: "", notes: "" });
-  }
-  return (
-    <StepCard eyebrow="Deadlines" title="Add a deadline or assignment" copy="The planner will add preparation blocks before it depending on your capacity.">
-      <form className="form-card" onSubmit={submit}>
-        <label>Title<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Research assignment due" /></label>
-        <label>Due date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></label>
-        <label>Due time optional<input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></label>
-        <label>Importance<select value={form.importance} onChange={(e) => setForm({ ...form, importance: e.target.value })}><option>High</option><option>Medium</option><option>Low</option></select></label>
-        <label>Estimated effort<select value={form.effort} onChange={(e) => setForm({ ...form, effort: e.target.value })}><option>High</option><option>Medium</option><option>Low</option></select></label>
-        <label>Notes<textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
-        <button type="submit">Save deadline</button>
-      </form>
-      <button className="bottom-action secondary-action" onClick={onDone}>Done</button>
-    </StepCard>
-  );
-}
-
-function RoutineStep({ state, onUpdate, onDone }: { state: PlannerState; onUpdate: (state: PlannerState) => void; onDone: () => void }) {
-  const [form, setForm] = useState<Omit<Routine, "id">>({ name: "", frequency: "weekly", preferredDay: 1, preferredTime: "18:00", effort: "medium", category: "self-care", active: true });
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!form.name.trim()) return;
-    onUpdate({ ...state, routines: [...state.routines, { ...form, id: crypto.randomUUID() }] });
-    setForm({ ...form, name: "" });
-  }
-  return (
-    <StepCard eyebrow="Routines" title="Add repeating routines" copy="Routines stay saved until you turn them off or change them.">
-      <form className="form-card" onSubmit={submit}>
-        <label>Routine name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Gym, food shop, clean, bedtime" /></label>
-        <label>Frequency<select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value as RoutineFrequency })}><option value="weekly">Weekly</option><option value="2x-weekly">2x weekly</option><option value="3x-weekly">3x weekly</option><option value="daily">Daily</option><option value="custom">Custom</option></select></label>
-        <label>Preferred day<select value={form.preferredDay} onChange={(e) => setForm({ ...form, preferredDay: Number(e.target.value) })}>{weekdays.map((day, index) => <option key={day} value={index}>{day}</option>)}</select></label>
-        <label>Preferred time<input type="time" value={form.preferredTime} onChange={(e) => setForm({ ...form, preferredTime: e.target.value })} /></label>
-        <label>Effort level<select value={form.effort} onChange={(e) => setForm({ ...form, effort: e.target.value as EffortLevel })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
-        <label>Type<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as Category })}><option value="gym">Gym</option><option value="food-shop">Food shop</option><option value="meal-prep">Meal prep</option><option value="cleaning">Cleaning</option><option value="study">Study</option><option value="self-care">Self-care</option></select></label>
-        <label className="switch-row"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Active</label>
-        <button type="submit">Save routine</button>
-      </form>
-      <MiniList items={state.routines.map((routine) => `${routine.name} - ${routine.frequency}`)} />
-      <button className="bottom-action secondary-action" onClick={onDone}>Done</button>
-    </StepCard>
-  );
-}
-
-function RulesStep({ state, onUpdate, onDone }: { state: PlannerState; onUpdate: (state: PlannerState) => void; onDone: () => void }) {
-  function toggle(rule: PresetRule) {
-    const selected = state.rules.selected.includes(rule)
-      ? state.rules.selected.filter((item) => item !== rule)
-      : [...state.rules.selected, rule];
-    onUpdate({ ...state, rules: { ...state.rules, selected } });
-  }
-  return (
-    <StepCard eyebrow="Personal rules" title="What should Future Me protect?" copy="Choose rules and add anything personal the planner should remember.">
-      <div className="rule-stack">
-        {presetRules.map((rule) => (
-          <label key={rule.id} className="check-card">
-            <input type="checkbox" checked={state.rules.selected.includes(rule.id)} onChange={() => toggle(rule.id)} />
-            <span>{rule.label}</span>
-          </label>
-        ))}
-      </div>
-      <label className="form-card solo">Custom rule<textarea value={state.rules.custom} onChange={(e) => onUpdate({ ...state, rules: { ...state.rules, custom: e.target.value } })} placeholder="Type your own planning rule" /></label>
-      <button className="bottom-action" onClick={onDone}>Save rules</button>
+      <button className="bottom-action" onClick={onNext}>Let's build your month</button>
     </StepCard>
   );
 }
 
 function DailyApp({
   state,
+  visibleDate,
+  realToday,
+  isViewingToday,
   installPrompt,
   notificationStatus,
+  onDateChange,
+  onToday,
   onBack,
   onPlan,
   onWeeklyCheck,
   onComplete,
-  onReschedule,
   onRequestNotifications
 }: {
   state: PlannerState;
+  visibleDate: string;
+  realToday: string;
+  isViewingToday: boolean;
   installPrompt: any;
   notificationStatus: NotificationPermission | "unsupported";
+  onDateChange: (date: string) => void;
+  onToday: () => void;
   onBack: () => void;
   onPlan: () => void;
   onWeeklyCheck: () => void;
   onComplete: (task: PlannedTask) => void;
-  onReschedule: (task: PlannedTask) => void;
   onRequestNotifications: () => void;
 }) {
-  const today = isoToday();
-  const tasks = state.plannedTasks.filter((task) => task.date === today && task.sourceType !== "sleep");
-  const unfinished = state.plannedTasks.filter((task) => task.sourceType !== "sleep" && !task.completed && new Date(`${task.date}T${task.endTime}`) < new Date());
-  const visible = tasks.length ? tasks : unfinished.slice(0, 4);
+  const tasks = daySchedule(state, visibleDate);
+  const nextTask = tasks.find((task) => !task.completed && task.sourceType !== "sleep");
   return (
     <main className="mobile-shell dashboard">
       <header className="dashboard-top">
         <button className="ghost-icon back-button dashboard-back" onClick={onBack} aria-label="Back">Back</button>
         <div>
           <p className="pill">FutureMe</p>
-          <h1>Today</h1>
-          <span>{formatDate(today)} - {capacityTitle(state.capacity)}</span>
+          <h1>{formatDateLong(visibleDate)}</h1>
+          <span>{capacityTitle(state.capacity)}</span>
         </div>
         <button className="ghost-icon filled" onClick={() => installPrompt?.prompt()} disabled={!installPrompt} aria-label="Install app">+</button>
       </header>
 
       <section className="today-card">
-        <p className="eyebrow">Today only</p>
-        <h2>{notificationMessage(state.settings.notificationPersonality, visible[0]?.title ?? "your next task", visible[0]?.startTime ?? "soon")}</h2>
+        <p className="eyebrow">A note from FutureMe</p>
+        <h2>{notificationMessage(state.settings.notificationPersonality, nextTask?.title ?? "your next task", nextTask?.startTime ?? "soon")}</h2>
         <button onClick={onRequestNotifications} disabled={notificationStatus === "granted" || notificationStatus === "unsupported"}>
-          {notificationStatus === "granted" ? "Notifications on" : "Enable reminders"}
+          {notificationStatus === "granted" ? "Reminders are on" : "Turn on gentle reminders"}
         </button>
       </section>
 
+      <section className="day-nav">
+        <button onClick={() => onDateChange(offsetDate(visibleDate, -1))} aria-label="Previous day">&lt;</button>
+        <div>
+          <strong>{formatWeekday(visibleDate)}</strong>
+          <span>{visibleDate === realToday ? "Today" : formatShortDate(visibleDate)}</span>
+        </div>
+        <button onClick={() => onDateChange(offsetDate(visibleDate, 1))} aria-label="Next day">&gt;</button>
+      </section>
+      {!isViewingToday && <button className="today-jump" onClick={onToday}>Return to current day</button>}
+
       <section className="task-section">
         <div className="section-title">
-          <h2>Today's plan</h2>
-          <span>{visible.length} active</span>
+          <h2>Today, gently</h2>
+          <span>{tasks.length} items</span>
         </div>
-        {visible.length === 0 ? <div className="empty-state">No tasks planned for today.</div> : visible.map((task) => (
-          <article key={task.id} className={task.completed ? "task-card done" : "task-card"}>
+        {tasks.length === 0 ? <div className="empty-state">No tasks planned for this day.</div> : tasks.map((task) => (
+          <article key={task.id} className={task.completed ? "schedule-row done" : "schedule-row"}>
+            <span className="schedule-time">{task.startTime}</span>
             <div className={`dot ${task.category}`} />
             <div>
               <strong>{task.title}</strong>
-              <span className="task-time">{task.startTime} - {task.endTime}</span>
-              <span className="task-category">{categoryLabels[task.category]}</span>
-              {task.notes && <p>{task.notes}</p>}
+              <span>{task.startTime} - {task.endTime}</span>
+              <small>{task.lock === "fixed" ? "Set by you" : "Placed by FutureMe"} - {categoryLabels[task.category]}</small>
             </div>
-            <button onClick={() => onComplete(task)} disabled={task.completed}>{task.completed ? "Done" : "Complete"}</button>
+            {task.sourceType !== "sleep" && <button onClick={() => onComplete(task)} disabled={task.completed}>{task.completed ? "Done" : "Complete"}</button>}
           </article>
         ))}
       </section>
 
-      {unfinished.length > 0 && (
-        <section className="task-section">
-          <div className="section-title">
-            <h2>Still active</h2>
-            <span>{unfinished.length}</span>
-          </div>
-          {unfinished.slice(0, 5).map((task) => (
-            <button key={task.id} className="unfinished-row" onClick={() => onReschedule(task)}>
-              <span>{task.title}</span>
-              <small>{formatDate(task.date)} - tap to reschedule</small>
+      <nav className="bottom-nav">
+        <button className={isViewingToday ? "active" : ""} onClick={onToday}>{isViewingToday ? "Today" : "Current day"}</button>
+        <button onClick={onWeeklyCheck}>Energy</button>
+        <button onClick={onPlan}>Month</button>
+      </nav>
+    </main>
+  );
+}
+
+function MonthCalendarApp({
+  state,
+  realToday,
+  installPrompt,
+  onBack,
+  onMonthChange,
+  onSelectDate,
+  onToday,
+  onWeeklyCheck
+}: {
+  state: PlannerState;
+  realToday: string;
+  installPrompt: any;
+  onBack: () => void;
+  onMonthChange: (monthKey: string) => void;
+  onSelectDate: (date: string) => void;
+  onToday: () => void;
+  onWeeklyCheck: () => void;
+}) {
+  const days = monthDays(state.plannedMonth);
+  return (
+    <main className="mobile-shell dashboard">
+      <header className="dashboard-top">
+        <button className="ghost-icon back-button dashboard-back" onClick={onBack} aria-label="Back">Back</button>
+        <div>
+          <p className="pill">FutureMe</p>
+          <h1>{monthLabel(state.plannedMonth)}</h1>
+          <span>Tap a day to see what FutureMe placed there.</span>
+        </div>
+        <button className="ghost-icon filled" onClick={() => installPrompt?.prompt()} disabled={!installPrompt} aria-label="Install app">+</button>
+      </header>
+
+      <section className="month-picker calendar-month-switcher">
+        <button onClick={() => onMonthChange(shiftMonth(state.plannedMonth, -1))} aria-label="Previous month">&lt;</button>
+        <strong>{monthLabel(state.plannedMonth)}</strong>
+        <button onClick={() => onMonthChange(shiftMonth(state.plannedMonth, 1))} aria-label="Next month">&gt;</button>
+      </section>
+
+      <section className="task-section month-overview">
+        <div className="month-calendar-grid">
+          {weekdays.map((day) => <span key={day} className="weekday">{day}</span>)}
+          {days.map((date, index) => date ? (
+            <button
+              key={date}
+              className={date === realToday ? "month-day today" : "month-day"}
+              onClick={() => onSelectDate(date)}
+            >
+              <span className="month-day-number">{Number(date.slice(8))}</span>
+              <span className="month-day-items">
+                {tasksForCalendarDay(state, date).slice(0, 3).map((task) => (
+                  <span key={task.id} className={`month-task-chip ${task.category}`}>{task.title}</span>
+                ))}
+                {tasksForCalendarDay(state, date).length > 3 && <span className="month-more">...</span>}
+              </span>
             </button>
-          ))}
-        </section>
-      )}
+          ) : <span key={`blank-${index}`} className="month-day blank" />)}
+        </div>
+      </section>
 
       <nav className="bottom-nav">
-        <button className="active">Today</button>
-        <button onClick={onWeeklyCheck}>Capacity</button>
-        <button onClick={onPlan}>Plan month</button>
+        <button onClick={onToday}>Today</button>
+        <button onClick={onWeeklyCheck}>Energy</button>
+        <button className="active">Month</button>
       </nav>
     </main>
   );
@@ -577,65 +931,142 @@ function MonthGrid({ month, selected, onToggle }: { month: string; selected: str
   return (
     <div className="calendar-card">
       {weekdays.map((day) => <span key={day} className="weekday">{day}</span>)}
-      {days.map((date) => date ? (
+      {days.map((date, index) => date ? (
         <button key={date} className={selected.includes(date) ? "selected" : ""} onClick={() => onToggle(date)}>
           {Number(date.slice(8))}
         </button>
-      ) : <span key={crypto.randomUUID()} />)}
+      ) : <span key={`blank-${index}`} />)}
     </div>
   );
-}
-
-function SummaryStrip({ state }: { state: PlannerState }) {
-  return (
-    <div className="summary-strip">
-      <span>{state.monthlyInputs.length} commitments</span>
-      <span>{state.routines.length} routines</span>
-      <span>{state.rules.selected.length} rules</span>
-    </div>
-  );
-}
-
-function MiniList({ items }: { items: string[] }) {
-  if (items.length === 0) return null;
-  return <div className="mini-list">{items.slice(-4).map((item) => <span key={item}>{item}</span>)}</div>;
 }
 
 function Loading({ message }: { message: string }) {
   return <main className="mobile-shell loading"><h1>FutureMe</h1><p>{message}</p></main>;
 }
 
-function toMonthlyInput(form: { title: string; date: string; startTime: string; endTime: string; location: string; notes: string }, category: Category): MonthlyInput {
+function configsFromRoutines(routines: Routine[]) {
+  return defaultFlexibleConfigs.map((config) => {
+    const routine = routines.find((item) => item.category === config.id);
+    return routine
+      ? {
+        ...config,
+        active: routine.active,
+        durationMinutes: routine.durationMinutes ?? config.durationMinutes,
+        frequency: routine.frequency,
+        preferredDay: routine.preferredDay,
+        preferredTime: routine.preferredTime,
+        effort: routine.effort,
+        priority: routine.priority ?? config.priority
+      }
+      : config;
+  });
+}
+
+function initialStepForPlan(state: PlannerState, today: string): FlowStep {
+  if (!state.setupComplete) return "start";
+  return hasCapacityCheckForWeek(state, today) ? "review" : "capacity";
+}
+
+function hasCapacityCheckForWeek(state: PlannerState, date: string) {
+  const weekKey = isoWeekKey(date);
+  const weekStart = startOfWeek(date);
+  return state.capacityChecks.some((check) => check.weekKey === weekKey || check.weekStart === weekStart);
+}
+
+function statusForCategory(state: PlannerState, category: Category) {
+  const count = state.monthlyInputs.filter((input) => input.category === category && input.date.startsWith(state.plannedMonth)).length;
+  if (category === "work") return count === 1 ? "1 shift added" : `${count} shifts added`;
+  return count === 1 ? "1 added" : `${count} added`;
+}
+
+function daySchedule(state: PlannerState, date: string) {
+  const visible = state.plannedTasks
+    .filter((task) => task.date === date && task.sourceType !== "sleep")
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  return [
+    ...visible,
+    {
+      id: `bedtime-${date}`,
+      sourceId: `sleep-${date}`,
+      sourceType: "sleep" as const,
+      title: "Bedtime",
+      date,
+      startTime: state.settings.bedTime,
+      endTime: state.settings.bedTime,
+      category: "self-care" as Category,
+      effort: "low" as EffortLevel,
+      lock: "fixed" as const,
+      priority: "essential" as const,
+      completed: false,
+      missed: false
+    }
+  ].sort((a, b) => a.startTime.localeCompare(b.startTime));
+}
+
+function tasksForCalendarDay(state: PlannerState, date: string) {
+  return state.plannedTasks
+    .filter((task) => task.date === date && task.sourceType !== "sleep")
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+}
+
+function emptyFixedDraft(month: string): FixedDraft {
   return {
-    id: crypto.randomUUID(),
-    title: form.title,
-    date: form.date,
-    startTime: form.startTime,
-    endTime: form.endTime || addMinutes(form.startTime, 60),
-    category,
-    notes: [form.location, form.notes].filter(Boolean).join(" - ")
+    title: "",
+    startTime: "10:00",
+    endTime: "",
+    location: "",
+    notes: "",
+    date: month ? `${month}-01` : "",
+    importance: "High",
+    effort: "Medium"
   };
+}
+
+function durationOptions(values: number[]) {
+  return values.map((value) => ({ value, label: value < 60 ? `${value} minutes` : value === 60 ? "1 hour" : `${value / 60} hours` }));
+}
+
+function frequencyLabel(frequency: RoutineFrequency) {
+  if (frequency === "weekly") return "1x weekly";
+  if (frequency === "2x-weekly") return "2x weekly";
+  if (frequency === "3x-weekly") return "3x weekly";
+  if (frequency === "4x-weekly") return "4x weekly";
+  if (frequency === "daily") return "Daily";
+  return "Custom";
+}
+
+function effortFromLabel(label: string): EffortLevel {
+  if (label === "Low") return "low";
+  if (label === "High") return "high";
+  return "medium";
+}
+
+function previousStep(step: FlowStep): FlowStep {
+  if (step === "month") return "start";
+  if (step === "flexible") return "month";
+  if (step === "capacity") return "flexible";
+  if (step === "personality") return "capacity";
+  if (step.includes("date")) {
+    if (step.startsWith("appointment")) return "appointment-details";
+    if (step.startsWith("deadline")) return "deadline-details";
+    if (step.startsWith("social")) return "social-details";
+  }
+  if (step.includes("again")) return "month";
+  if (step === "work-dates") return "work-time";
+  if (step === "work-time" || step.endsWith("details")) return "month";
+  return "start";
 }
 
 function notificationMessage(personality: NotificationPersonality, title: string, time: string) {
   const when = time === "soon" || time.startsWith("in ") ? time : `at ${time}`;
   const messages: Record<NotificationPersonality, string> = {
     bestie: `Hey girlie pop, ${title} is ${when}. Let's get ready.`,
-    gentle: `Soft reminder, ${title} is ${when}. Start getting ready when you can.`,
-    coach: `${title} ${when}. Get ready and follow the plan.`,
+    gentle: `Soft reminder, ${title} is coming up ${when}. Start getting ready when you can.`,
+    coach: `${title} ${when}. Get your kit ready and follow the plan.`,
     professional: `Reminder: ${title} is scheduled ${when}. Please prepare accordingly.`,
     chaos: `BESTIE. ${title} is ${when}. Shoes. Water. Go mode.`
   };
   return messages[personality];
-}
-
-function previousStep(step: FlowStep, state: PlannerState): FlowStep {
-  if (state.setupComplete && (step === "capacity" || step === "categories")) return "review";
-  const order: FlowStep[] = ["welcome", "capacity", "personality", "month", "categories"];
-  const index = order.indexOf(step);
-  if (index > 0) return order[index - 1];
-  if (step !== "welcome" && step !== "review") return "categories";
-  return "welcome";
 }
 
 function monthDays(month: string) {
@@ -648,22 +1079,30 @@ function monthDays(month: string) {
   ];
 }
 
+function monthLabel(month: string) {
+  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(new Date(`${month}-01T12:00:00`));
+}
+
 function shiftMonth(month: string, delta: number) {
   const [year, monthIndex] = month.split("-").map(Number);
   const date = new Date(year, monthIndex - 1 + delta, 1);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function monthLabel(month: string) {
-  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(new Date(`${month}-01T12:00:00`));
-}
-
 function capacityTitle(capacity: CapacityMode) {
-  return capacities.find((item) => item.id === capacity)?.title ?? "Normal Capacity";
+  return capacities.find((item) => item.id === capacity)?.title ?? "I feel steady";
 }
 
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${date}T12:00:00`));
+function formatDateLong(date: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+}
+
+function formatWeekday(date: string) {
+  return new Intl.DateTimeFormat("en-GB", { weekday: "long" }).format(new Date(`${date}T12:00:00`));
+}
+
+function formatShortDate(date: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
 }
 
 function addMinutes(time: string, minutes: number) {
@@ -672,6 +1111,36 @@ function addMinutes(time: string, minutes: number) {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+function offsetDate(date: string, offset: number) {
+  const cursor = new Date(`${date}T12:00:00`);
+  cursor.setDate(cursor.getDate() + offset);
+  return dateKey(cursor);
+}
+
 function isoToday() {
-  return new Date().toISOString().slice(0, 10);
+  return dateKey(new Date());
+}
+
+function startOfWeek(date: string) {
+  const cursor = new Date(`${date}T12:00:00`);
+  const day = cursor.getDay();
+  cursor.setDate(cursor.getDate() + (day === 0 ? -6 : 1 - day));
+  return dateKey(cursor);
+}
+
+function isoWeekKey(date: string) {
+  const cursor = new Date(`${date}T12:00:00`);
+  const day = cursor.getDay() || 7;
+  cursor.setDate(cursor.getDate() + 4 - day);
+  const yearStart = new Date(cursor.getFullYear(), 0, 1);
+  const week = Math.ceil((((cursor.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${cursor.getFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

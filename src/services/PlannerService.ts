@@ -1,14 +1,15 @@
 import { LocalPlannerRepository } from "../data/LocalPlannerRepository";
 import type { PlannerRepository } from "../data/PlannerRepository";
-import { seedState } from "../data/seed";
+import { createSeedState } from "../data/seed";
 import { generateMonthlyPlan } from "../planner/autoPlanner";
 import type { PlannerState, PlannedTask } from "../models/types";
 
 export class PlannerService {
   constructor(private repository: PlannerRepository = new LocalPlannerRepository()) {}
 
-  async load(): Promise<PlannerState> {
-    return (await this.repository.load()) ?? seedState;
+  async load(monthKey?: string): Promise<PlannerState> {
+    const requestedMonth = monthKey ?? currentMonthKey();
+    return (await this.repository.load(requestedMonth)) ?? createSeedState(requestedMonth);
   }
 
   async save(state: PlannerState): Promise<void> {
@@ -17,11 +18,12 @@ export class PlannerService {
 
   async generate(state: PlannerState): Promise<PlannerState> {
     const existingById = new Map(state.plannedTasks.map((task) => [task.id, task]));
-    const plannedTasks = generateMonthlyPlan(state).map((task) => {
+    const generated = generateMonthlyPlan(state);
+    const plannedTasks = generated.tasks.map((task) => {
       const existing = existingById.get(task.id);
       return existing ? { ...task, completed: existing.completed } : task;
     });
-    const next = { ...state, plannedTasks };
+    const next = { ...state, plannedTasks, explanations: generated.explanations };
     await this.save(next);
     return next;
   }
@@ -34,4 +36,11 @@ export class PlannerService {
     await this.save(next);
     return next;
   }
+}
+
+function currentMonthKey() {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  return `${yyyy}-${mm}`;
 }
