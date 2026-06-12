@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createSeedState } from "./data/seed";
 import { PlannerService } from "./services/PlannerService";
 import type {
@@ -196,10 +196,12 @@ export function App() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallInstructions, setShowInstallInstructions] = useState(false);
+  const [showReminderInstructions, setShowReminderInstructions] = useState(false);
   const [isStandalone, setIsStandalone] = useState(isStandaloneMode());
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | "unsupported">(
     "Notification" in window ? Notification.permission : "unsupported"
   );
+  const stepRef = useRef(step);
 
   useEffect(() => {
     const today = isoToday();
@@ -215,6 +217,36 @@ export function App() {
         setState(withPlan);
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : "Unable to load planner data."));
+  }, []);
+
+  useEffect(() => {
+    stepRef.current = step;
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
+  }, [step, selectedDate]);
+
+  useEffect(() => {
+    window.history.replaceState({ futureMe: true }, "", window.location.href);
+    window.history.pushState({ futureMe: true }, "", window.location.href);
+
+    const onPopState = () => {
+      const currentStep = stepRef.current;
+      if (currentStep === "start") {
+        window.history.pushState({ futureMe: true }, "", window.location.href);
+        return;
+      }
+
+      if (currentStep === "review") {
+        setStep("month");
+      } else if (currentStep === "calendar") {
+        setStep("review");
+      } else {
+        setStep(previousStep(currentStep));
+      }
+      window.history.pushState({ futureMe: true }, "", window.location.href);
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   useEffect(() => {
@@ -276,6 +308,11 @@ export function App() {
     if (!state) return;
     setSelectedDate(null);
     setStep(initialStepForPlan(state, realToday));
+  }
+
+  function goHome() {
+    setSelectedDate(null);
+    setStep("start");
   }
 
   function startNewMonth() {
@@ -436,6 +473,7 @@ export function App() {
   async function requestNotifications() {
     if (!("Notification" in window)) {
       setNotificationStatus("unsupported");
+      setShowReminderInstructions(true);
       return;
     }
     const permission = await Notification.requestPermission();
@@ -485,12 +523,14 @@ export function App() {
         onDateChange={setSelectedDate}
         onToday={() => setSelectedDate(null)}
         onBack={() => setStep("month")}
+        onHome={goHome}
         onPlan={() => setStep("calendar")}
         onWeeklyCheck={() => setStep("capacity")}
         onComplete={(task) => patchTask(task.id, { completed: true, missed: false })}
         onRequestNotifications={requestNotifications}
       >
         <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
+        <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
       </DailyApp>
     );
   }
@@ -502,6 +542,7 @@ export function App() {
         realToday={realToday}
         installControls={installControls}
         onBack={() => setStep("review")}
+        onHome={goHome}
         onMonthChange={(monthKey) => changePlanMonth(monthKey, "calendar")}
         onSelectDate={(date) => {
           setSelectedDate(date === realToday ? null : date);
@@ -514,12 +555,13 @@ export function App() {
         onWeeklyCheck={() => setStep("capacity")}
       >
         <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
+        <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
       </MonthCalendarApp>
     );
   }
 
   return (
-    <FlowShell step={step} state={state} installControls={installControls} onBack={() => setStep(previousStep(step))}>
+    <FlowShell step={step} state={state} installControls={installControls} onBack={() => setStep(previousStep(step))} onHome={goHome}>
       {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} />}
       {step === "loading" && <FutureMeLoading />}
       {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onNext={() => setStep("flexible")} />}
@@ -540,6 +582,7 @@ export function App() {
       {step === "personality" && <PersonalityStep state={state} onUpdate={update} onNext={completeSetup} />}
       {step === "generating" && <GenerateStep />}
       <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
+      <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
     </FlowShell>
   );
 }
@@ -549,13 +592,15 @@ function FlowShell({
   step,
   state,
   installControls,
-  onBack
+  onBack,
+  onHome
 }: {
   children: React.ReactNode;
   step: FlowStep;
   state: PlannerState;
   installControls: InstallControls;
   onBack: () => void;
+  onHome: () => void;
 }) {
   const progress = Math.max(1, setupSteps.indexOf(step) + 1);
   const total = setupSteps.length;
@@ -572,7 +617,12 @@ function FlowShell({
         </header>
       )}
       <div className="flow-content">{children}</div>
-      {showHeader && <p className="storage-note">Saved on this device for {monthLabel(state.plannedMonth)}. UI fix v2</p>}
+      {showHeader && (
+        <footer className="flow-footer">
+          <button type="button" className="home-action" onClick={onHome} disabled={step === "start"}>Home</button>
+          <p className="storage-note">Saved on this device for {monthLabel(state.plannedMonth)}. UI fix v2</p>
+        </footer>
+      )}
     </main>
   );
 }
@@ -848,6 +898,7 @@ function DailyApp({
   onDateChange,
   onToday,
   onBack,
+  onHome,
   onPlan,
   onWeeklyCheck,
   onComplete,
@@ -863,6 +914,7 @@ function DailyApp({
   onDateChange: (date: string) => void;
   onToday: () => void;
   onBack: () => void;
+  onHome: () => void;
   onPlan: () => void;
   onWeeklyCheck: () => void;
   onComplete: (task: PlannedTask) => void;
@@ -886,7 +938,7 @@ function DailyApp({
       <section className="today-card">
         <p className="eyebrow">A note from FutureMe</p>
         <h2>{notificationMessage(state.settings.notificationPersonality, nextTask?.title ?? "your next task", nextTask?.startTime ?? "soon")}</h2>
-        <button onClick={onRequestNotifications} disabled={notificationStatus === "granted" || notificationStatus === "unsupported"}>
+        <button onClick={onRequestNotifications} disabled={notificationStatus === "granted"}>
           {notificationStatus === "granted" ? "Reminders are on" : "Turn on gentle reminders"}
         </button>
       </section>
@@ -924,6 +976,7 @@ function DailyApp({
         <button className={isViewingToday ? "active" : ""} onClick={onToday}>{isViewingToday ? "Today" : "Current day"}</button>
         <button onClick={onWeeklyCheck}>Energy</button>
         <button onClick={onPlan}>Month</button>
+        <button onClick={onHome}>Home</button>
       </nav>
       {children}
     </main>
@@ -935,6 +988,7 @@ function MonthCalendarApp({
   realToday,
   installControls,
   onBack,
+  onHome,
   onMonthChange,
   onSelectDate,
   onToday,
@@ -945,6 +999,7 @@ function MonthCalendarApp({
   realToday: string;
   installControls: InstallControls;
   onBack: () => void;
+  onHome: () => void;
   onMonthChange: (monthKey: string) => void;
   onSelectDate: (date: string) => void;
   onToday: () => void;
@@ -995,6 +1050,7 @@ function MonthCalendarApp({
         <button onClick={onToday}>Today</button>
         <button onClick={onWeeklyCheck}>Energy</button>
         <button className="active">Month</button>
+        <button onClick={onHome}>Home</button>
       </nav>
       {children}
     </main>
@@ -1029,6 +1085,20 @@ function InstallInstructionsModal({ open, onClose }: { open: boolean; onClose: (
           <li>Tap "Add to Home Screen"</li>
           <li>Tap "Add"</li>
         </ol>
+        <button type="button" className="bottom-action" onClick={onClose}>Got it</button>
+      </section>
+    </div>
+  );
+}
+
+function ReminderInstructionsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null;
+
+  return (
+    <div className="install-modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="install-modal" role="dialog" aria-modal="true" aria-labelledby="reminder-modal-title" onClick={(event) => event.stopPropagation()}>
+        <h2 id="reminder-modal-title">Reminders need a little setup</h2>
+        <p className="modal-copy">If your browser does not show notification permissions here, add FutureMe to your Home Screen first, then open it from there to enable reminders.</p>
         <button type="button" className="bottom-action" onClick={onClose}>Got it</button>
       </section>
     </div>
