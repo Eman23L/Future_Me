@@ -205,6 +205,18 @@ textarea {
   line-height: 1.68;
 }
 
+.welcome-actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.welcome-actions .secondary-action {
+  min-height: 52px;
+  border-radius: 22px;
+  font-weight: 800;
+}
+
 .pill,
 .eyebrow {
   margin: 0 0 12px;

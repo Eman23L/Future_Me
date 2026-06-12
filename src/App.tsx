@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { createSeedState } from "./data/seed";
 import { PlannerService } from "./services/PlannerService";
 import type {
   CapacityMode,
@@ -198,7 +199,7 @@ export function App() {
         const withPlan = withCurrentMonth.setupComplete && withCurrentMonth.plannedTasks.length === 0 ? await service.generate(withCurrentMonth) : withCurrentMonth;
         setFlexibleConfigs(configsFromRoutines(withPlan.routines));
         setSelectedDate(null);
-        setStep(initialStepForPlan(withPlan, today));
+        setStep("start");
         setState(withPlan);
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : "Unable to load planner data."));
@@ -212,7 +213,7 @@ export function App() {
       void handleDateRollover(today);
     }, 60_000);
     return () => window.clearInterval(interval);
-  }, [realToday, state, selectedDate]);
+  }, [realToday, state, selectedDate, step]);
 
   useEffect(() => {
     const listener = (event: Event) => {
@@ -236,16 +237,33 @@ export function App() {
       setState(withPlan);
       setFlexibleConfigs(configsFromRoutines(withPlan.routines));
       setSelectedDate(null);
-      setStep(initialStepForPlan(withPlan, today));
+      if (step !== "start") setStep(initialStepForPlan(withPlan, today));
       return;
     }
 
-    if (!selectedDate && state.setupComplete) {
+    if (step !== "start" && !selectedDate && state.setupComplete) {
       setStep(initialStepForPlan(state, today));
     }
   }
 
   function beginSetup() {
+    setStep("loading");
+    window.setTimeout(() => setStep("month"), 850);
+  }
+
+  function continueCurrentPlan() {
+    if (!state) return;
+    setSelectedDate(null);
+    setStep(initialStepForPlan(state, realToday));
+  }
+
+  function startNewMonth() {
+    const fresh = createSeedState(realToday.slice(0, 7));
+    setState(fresh);
+    setFlexibleConfigs(defaultFlexibleConfigs);
+    setFixedDraft(emptyFixedDraft(fresh.plannedMonth));
+    setWorkDraft({ startTime: "07:30", endTime: "20:30", dates: [] });
+    setSelectedDate(null);
     setStep("loading");
     window.setTimeout(() => setStep("month"), 850);
   }
@@ -456,7 +474,7 @@ export function App() {
 
   return (
     <FlowShell step={step} state={state} installPrompt={installPrompt} onBack={() => setStep(previousStep(step))}>
-      {step === "start" && <StartScreen onSetup={beginSetup} />}
+      {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={state.setupComplete ? continueCurrentPlan : beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} />}
       {step === "loading" && <FutureMeLoading />}
       {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onNext={() => setStep("flexible")} />}
       {step === "work-time" && <WorkTimeStep draft={workDraft} onDraftChange={setWorkDraft} onNext={() => setStep("work-dates")} />}
@@ -512,13 +530,29 @@ function FlowShell({
   );
 }
 
-function StartScreen({ onSetup }: { onSetup: () => void }) {
+function StartScreen({
+  hasSavedData,
+  onSetup,
+  onContinue,
+  onStartNewMonth
+}: {
+  hasSavedData: boolean;
+  onSetup: () => void;
+  onContinue: () => void;
+  onStartNewMonth: () => void;
+}) {
   return (
     <section className="welcome-card">
       <p className="pill">FutureMe</p>
       <h1>Welcome to your gentle plan</h1>
       <p>Tell me what is already in your month, and I will shape the rest around your time, energy and care.</p>
       <button className="bottom-action" onClick={onSetup}>Set up</button>
+      {hasSavedData && (
+        <div className="welcome-actions">
+          <button className="secondary-action" onClick={onContinue}>Continue current plan</button>
+          <button className="secondary-action" onClick={onStartNewMonth}>Start new month</button>
+        </div>
+      )}
     </section>
   );
 }
@@ -961,6 +995,10 @@ function configsFromRoutines(routines: Routine[]) {
       }
       : config;
   });
+}
+
+function hasSavedData(state: PlannerState) {
+  return state.setupComplete || state.monthlyInputs.length > 0 || state.routines.length > 0 || state.plannedTasks.length > 0;
 }
 
 function initialStepForPlan(state: PlannerState, today: string): FlowStep {
