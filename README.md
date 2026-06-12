@@ -88,6 +88,16 @@ Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `VAPID_PRIVATE_KEY` in frontend cod
 
 On iPhone/iPad, Web Push only works from the installed Home Screen web app.
 
+After changing manifest or iOS meta tags:
+
+1. Delete the old FutureMe Home Screen icon.
+2. Clear Safari website data for the domain.
+3. Open the site in Safari again.
+4. Add it to Home Screen again.
+5. Open from the new Home Screen icon.
+
+To enable reminders:
+
 1. Open FutureMe in Safari.
 2. Tap the Share button.
 3. Tap Add to Home Screen.

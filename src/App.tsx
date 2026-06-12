@@ -1237,9 +1237,22 @@ function ReminderInstructionsModal({ open, onClose }: { open: boolean; onClose: 
           <li>Open FutureMe from your Home Screen</li>
           <li>Then tap Enable reminders</li>
         </ol>
+        <StandaloneDebugLine />
         <button type="button" className="bottom-action" onClick={onClose}>Got it</button>
       </section>
     </div>
+  );
+}
+
+function StandaloneDebugLine() {
+  const navigatorStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+  const displayModeStandalone = window.matchMedia("(display-mode: standalone)").matches;
+  const standalone = navigatorStandalone || displayModeStandalone;
+
+  return (
+    <p className="standalone-debug">
+      standalone: {String(standalone)} | navigator.standalone: {String(navigatorStandalone)} | display-mode standalone: {String(displayModeStandalone)}
+    </p>
   );
 }
 
