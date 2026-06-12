@@ -26,6 +26,16 @@ type InstallControls = {
   onInstall: () => void;
 };
 
+type ScheduledReminderPayload = {
+  taskId: string;
+  title: string;
+  body: string;
+  scheduledFor: string;
+  notificationVibe: NotificationPersonality;
+  taskDate: string;
+  taskCategory: Category;
+};
+
 type FlowStep =
   | "start"
   | "loading"
@@ -84,6 +94,9 @@ type FlexibleConfig = {
 
 const setupSteps: FlowStep[] = ["start", "loading", "month", "flexible", "capacity", "personality", "generating", "review"];
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const USER_ID_KEY = "future-me:user-id";
+const NOTIFICATIONS_ENABLED_KEY = "future-me:notifications-enabled";
+const PUSH_ENDPOINT_KEY = "future-me:push-endpoint";
 
 const capacities: Array<{ id: CapacityMode; title: string; detail: string }> = [
   { id: "high", title: "I have plenty in me", detail: "A fuller week with room for the rituals you care about." },
@@ -201,20 +214,24 @@ export function App() {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | "unsupported">(
     "Notification" in window ? Notification.permission : "unsupported"
   );
+  const [notificationsEnabled, setNotificationsEnabled] = useState(localStorage.getItem(NOTIFICATIONS_ENABLED_KEY) === "true");
+  const [notificationNotice, setNotificationNotice] = useState("");
+  const [pushEndpoint, setPushEndpoint] = useState(localStorage.getItem(PUSH_ENDPOINT_KEY) ?? "");
   const stepRef = useRef(step);
   const lastHistoryStep = useRef<FlowStep | null>(null);
 
   useEffect(() => {
     const today = isoToday();
     const monthKey = today.slice(0, 7);
+    const requestedDate = new URLSearchParams(window.location.search).get("date");
     setRealToday(today);
     service.load(monthKey)
       .then(async (loaded) => {
         const withCurrentMonth = loaded.plannedMonth === monthKey ? loaded : { ...loaded, plannedMonth: monthKey, setupComplete: false };
         const withPlan = withCurrentMonth.setupComplete ? await service.generate(withCurrentMonth) : withCurrentMonth;
         setFlexibleConfigs(configsFromRoutines(withPlan.routines));
-        setSelectedDate(null);
-        setStep("start");
+        setSelectedDate(requestedDate && withPlan.setupComplete ? requestedDate : null);
+        setStep(requestedDate && withPlan.setupComplete ? "review" : "start");
         setState(withPlan);
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : "Unable to load planner data."));
@@ -451,6 +468,7 @@ export function App() {
     await update(withSetup);
     await delay(650);
     const generated = await service.generate(withSetup);
+    void syncScheduledReminders(generated);
     setState(generated);
     setSelectedDate(generated.plannedMonth === realToday.slice(0, 7) ? null : `${generated.plannedMonth}-01`);
     setStep("review");
@@ -474,6 +492,7 @@ export function App() {
       ]
     };
     const generated = await service.generate(next);
+    void syncScheduledReminders(generated);
     setState(generated);
     setSelectedDate(null);
     setStep("review");
@@ -485,17 +504,98 @@ export function App() {
   }
 
   async function requestNotifications() {
-    if (!("Notification" in window)) {
+    setNotificationNotice("");
+
+    if (isIosSafari() && !isStandaloneMode()) {
+      setShowReminderInstructions(true);
+      return;
+    }
+
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
       setNotificationStatus("unsupported");
       setShowReminderInstructions(true);
       return;
     }
+
     const permission = await Notification.requestPermission();
     setNotificationStatus(permission);
-    if (permission === "granted") {
-      new Notification("FutureMe reminders are on", {
-        body: notificationMessage(state?.settings.notificationPersonality ?? "gentle", "Gym", "in 1 hour")
+
+    if (permission !== "granted") {
+      setNotificationNotice("Notifications are not enabled yet. You can try again from here.");
+      return;
+    }
+
+    try {
+      const vapidPublicKey = await loadVapidPublicKey();
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      const readyRegistration = await navigator.serviceWorker.ready.then((ready) => ready ?? registration);
+      const existingSubscription = await readyRegistration.pushManager.getSubscription();
+      const subscription = existingSubscription ?? await readyRegistration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
       });
+
+      const response = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: getLocalUserId(),
+          userAgent: navigator.userAgent,
+          subscription: subscription.toJSON()
+        })
+      });
+
+      if (!response.ok) throw new Error("Unable to save reminder subscription.");
+
+      localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, "true");
+      localStorage.setItem(PUSH_ENDPOINT_KEY, subscription.endpoint);
+      setPushEndpoint(subscription.endpoint);
+      setNotificationsEnabled(true);
+      setNotificationNotice("Reminders are on. FutureMe can now nudge you from your schedule.");
+      if (state) void syncScheduledReminders(state);
+    } catch (error) {
+      setNotificationNotice(error instanceof Error ? error.message : "Reminder setup did not finish.");
+    }
+  }
+
+  async function sendTestReminder() {
+    setNotificationNotice("");
+    try {
+      const response = await fetch("/api/push/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: getLocalUserId(),
+          endpoint: pushEndpoint || localStorage.getItem(PUSH_ENDPOINT_KEY)
+        })
+      });
+
+      if (!response.ok) throw new Error("The test reminder could not be sent yet.");
+      setNotificationNotice("Test reminder sent.");
+    } catch (error) {
+      setNotificationNotice(error instanceof Error ? error.message : "The test reminder could not be sent yet.");
+    }
+  }
+
+  function dismissReminderPrompt() {
+    setNotificationNotice("No problem. You can enable reminders here later.");
+  }
+
+  async function syncScheduledReminders(nextState: PlannerState) {
+    if (!nextState.setupComplete) return;
+
+    try {
+      await fetch("/api/reminders/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: getLocalUserId(),
+          monthKey: nextState.plannedMonth,
+          reminders: buildScheduledReminders(nextState)
+        })
+      });
+    } catch {
+      // Reminder sync is best-effort; the local planner should keep working offline.
     }
   }
 
@@ -534,6 +634,8 @@ export function App() {
         isViewingToday={selectedDate === null || selectedDate === realToday}
         installControls={installControls}
         notificationStatus={notificationStatus}
+        notificationsEnabled={notificationsEnabled}
+        notificationNotice={notificationNotice}
         onDateChange={setSelectedDate}
         onToday={() => setSelectedDate(null)}
         onBack={() => setStep("month")}
@@ -542,6 +644,8 @@ export function App() {
         onWeeklyCheck={() => setStep("capacity")}
         onComplete={(task) => patchTask(task.id, { completed: true, missed: false })}
         onRequestNotifications={requestNotifications}
+        onDismissNotifications={dismissReminderPrompt}
+        onTestReminder={sendTestReminder}
       >
         <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
         <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
@@ -909,6 +1013,8 @@ function DailyApp({
   isViewingToday,
   installControls,
   notificationStatus,
+  notificationsEnabled,
+  notificationNotice,
   onDateChange,
   onToday,
   onBack,
@@ -917,6 +1023,8 @@ function DailyApp({
   onWeeklyCheck,
   onComplete,
   onRequestNotifications,
+  onDismissNotifications,
+  onTestReminder,
   children
 }: {
   state: PlannerState;
@@ -925,6 +1033,8 @@ function DailyApp({
   isViewingToday: boolean;
   installControls: InstallControls;
   notificationStatus: NotificationPermission | "unsupported";
+  notificationsEnabled: boolean;
+  notificationNotice: string;
   onDateChange: (date: string) => void;
   onToday: () => void;
   onBack: () => void;
@@ -933,6 +1043,8 @@ function DailyApp({
   onWeeklyCheck: () => void;
   onComplete: (task: PlannedTask) => void;
   onRequestNotifications: () => void;
+  onDismissNotifications: () => void;
+  onTestReminder: () => void;
   children?: React.ReactNode;
 }) {
   const tasks = daySchedule(state, visibleDate);
@@ -952,9 +1064,15 @@ function DailyApp({
       <section className="today-card">
         <p className="eyebrow">A note from FutureMe</p>
         <h2>{notificationMessage(state.settings.notificationPersonality, nextTask?.title ?? "your next task", nextTask?.startTime ?? "soon")}</h2>
-        <button onClick={onRequestNotifications} disabled={notificationStatus === "granted"}>
-          {notificationStatus === "granted" ? "Reminders are on" : "Turn on gentle reminders"}
-        </button>
+        <p className="reminder-copy">I can remind you before work, gym, appointments, deadlines and prep tasks.</p>
+        <div className="reminder-actions">
+          <button onClick={onRequestNotifications} disabled={notificationsEnabled && notificationStatus === "granted"}>
+            {notificationsEnabled && notificationStatus === "granted" ? "Reminders are on" : "Enable reminders"}
+          </button>
+          {!notificationsEnabled && <button className="secondary-action" onClick={onDismissNotifications}>Not now</button>}
+          {notificationsEnabled && <button className="secondary-action" onClick={onTestReminder}>Send test reminder</button>}
+        </div>
+        {notificationNotice && <p className="reminder-status">{notificationNotice}</p>}
       </section>
 
       <section className="day-nav">
@@ -1111,8 +1229,14 @@ function ReminderInstructionsModal({ open, onClose }: { open: boolean; onClose: 
   return (
     <div className="install-modal-backdrop" role="presentation" onClick={onClose}>
       <section className="install-modal" role="dialog" aria-modal="true" aria-labelledby="reminder-modal-title" onClick={(event) => event.stopPropagation()}>
-        <h2 id="reminder-modal-title">Reminders need a little setup</h2>
-        <p className="modal-copy">If your browser does not show notification permissions here, add FutureMe to your Home Screen first, then open it from there to enable reminders.</p>
+        <h2 id="reminder-modal-title">Add FutureMe to your Home Screen</h2>
+        <p className="modal-copy">To enable reminders on iPhone:</p>
+        <ol>
+          <li>Tap the Share button in Safari</li>
+          <li>Tap Add to Home Screen</li>
+          <li>Open FutureMe from your Home Screen</li>
+          <li>Then tap Enable reminders</li>
+        </ol>
         <button type="button" className="bottom-action" onClick={onClose}>Got it</button>
       </section>
     </div>
@@ -1266,7 +1390,7 @@ function previousStep(step: FlowStep): FlowStep {
 }
 
 function notificationMessage(personality: NotificationPersonality, title: string, time: string) {
-  const when = time === "soon" || time.startsWith("in ") ? time : `at ${time}`;
+  const when = time === "soon" || time === "now" || time.startsWith("in ") ? time : `at ${time}`;
   const messages: Record<NotificationPersonality, string> = {
     bestie: `Hey girlie pop, ${title} is ${when}. Let's get ready.`,
     gentle: `Soft reminder, ${title} is coming up ${when}. Start getting ready when you can.`,
@@ -1275,6 +1399,103 @@ function notificationMessage(personality: NotificationPersonality, title: string
     chaos: `BESTIE. ${title} is ${when}. Shoes. Water. Go mode.`
   };
   return messages[personality];
+}
+
+function buildScheduledReminders(state: PlannerState): ScheduledReminderPayload[] {
+  const now = Date.now();
+  const reminders: ScheduledReminderPayload[] = [];
+
+  state.plannedTasks
+    .filter((task) => task.sourceType !== "sleep" && !task.completed)
+    .forEach((task) => {
+      const vibe = state.settings.notificationPersonality;
+      const addReminder = (kind: "evening-before" | "day-before" | "morning-of" | "one-hour" | "at-time", scheduledFor: string) => {
+        if (new Date(scheduledFor).getTime() <= now) return;
+        reminders.push({
+          taskId: `${task.id}:${kind}`,
+          title: "FutureMe reminder",
+          body: reminderBody(vibe, task, kind),
+          scheduledFor,
+          notificationVibe: vibe,
+          taskDate: task.date,
+          taskCategory: task.category
+        });
+      };
+
+      if (task.category === "work" || task.category === "gym") {
+        addReminder("evening-before", localDateTimeToIso(offsetDate(task.date, -1), "20:00"));
+      }
+
+      if (task.category === "deadline") {
+        addReminder("day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
+        addReminder("morning-of", localDateTimeToIso(task.date, "09:00"));
+      }
+
+      addReminder("one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
+
+      if (task.category === "deadline") {
+        addReminder("at-time", localDateTimeToIso(task.date, task.startTime));
+      }
+    });
+
+  return reminders;
+}
+
+function reminderBody(personality: NotificationPersonality, task: PlannedTask, kind: "evening-before" | "day-before" | "morning-of" | "one-hour" | "at-time") {
+  const title = task.title;
+
+  if (kind === "evening-before") {
+    const messages: Record<NotificationPersonality, string> = {
+      bestie: `Hey girlie pop, ${title} is tomorrow. Set yourself up gently tonight.`,
+      gentle: `Soft reminder, ${title} is tomorrow. Prepare what you need when you can.`,
+      coach: `${title} tomorrow. Prep your essentials tonight and follow the plan.`,
+      professional: `Reminder: ${title} is scheduled tomorrow. Please prepare accordingly.`,
+      chaos: `BESTIE. ${title} is tomorrow. Outfit. Bag. Water. Future you says thanks.`
+    };
+    return messages[personality];
+  }
+
+  if (kind === "day-before") {
+    const messages: Record<NotificationPersonality, string> = {
+      bestie: `Hey girlie pop, ${title} is due tomorrow. Tiny steady steps now.`,
+      gentle: `Soft reminder, ${title} is due tomorrow. Give yourself a calm check-in today.`,
+      coach: `${title} is due tomorrow. Review the final pieces today.`,
+      professional: `Reminder: ${title} is due tomorrow. Please review your preparation.`,
+      chaos: `BESTIE. ${title} is tomorrow. Open the thing. Finish the thing.`
+    };
+    return messages[personality];
+  }
+
+  if (kind === "morning-of") {
+    const messages: Record<NotificationPersonality, string> = {
+      bestie: `Hey girlie pop, ${title} is today. Let's keep it simple and steady.`,
+      gentle: `Soft reminder, ${title} is today. Start with the next kind step.`,
+      coach: `${title} is today. Check the plan and move early.`,
+      professional: `Reminder: ${title} is scheduled for today.`,
+      chaos: `BESTIE. ${title} is today. Main character admin mode.`
+    };
+    return messages[personality];
+  }
+
+  if (kind === "at-time") {
+    return notificationMessage(personality, title, "now");
+  }
+
+  return notificationMessage(personality, title, "in about an hour");
+}
+
+function localDateTimeToIso(date: string, time: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hours, minutes] = time.split(":").map(Number);
+  return new Date(year, month - 1, day, hours, minutes).toISOString();
+}
+
+function addMinutesToLocalDateTime(date: string, time: string, minutes: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hours, mins] = time.split(":").map(Number);
+  const value = new Date(year, month - 1, day, hours, mins);
+  value.setMinutes(value.getMinutes() + minutes);
+  return value.toISOString();
 }
 
 function monthDays(month: string) {
@@ -1358,6 +1579,29 @@ function isIosSafari() {
   const isIos = /iPad|iPhone|iPod/.test(ua) || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
   const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|Chrome|Android/.test(ua);
   return isIos && isSafari;
+}
+
+function getLocalUserId() {
+  const existing = localStorage.getItem(USER_ID_KEY);
+  if (existing) return existing;
+  const userId = crypto.randomUUID();
+  localStorage.setItem(USER_ID_KEY, userId);
+  return userId;
+}
+
+async function loadVapidPublicKey() {
+  const response = await fetch("/api/push/public-key");
+  if (!response.ok) throw new Error("Reminder setup needs the VAPID public key in Vercel first.");
+  const data = await response.json() as { publicKey?: string };
+  if (!data.publicKey) throw new Error("Reminder setup needs the VAPID public key in Vercel first.");
+  return data.publicKey;
+}
+
+function urlBase64ToUint8Array(value: string) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
 }
 
 function delay(ms: number) {

@@ -904,6 +904,34 @@ label {
   letter-spacing: 0;
 }
 
+.reminder-copy,
+.reminder-status {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.reminder-status {
+  padding: 12px 14px;
+  border: 1px solid rgba(214, 176, 186, 0.3);
+  border-radius: 18px;
+  background: rgba(255, 231, 238, 0.5);
+  color: var(--rose-dark);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.reminder-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.reminder-actions button {
+  margin-top: 0;
+}
+
 .section-title {
   display: flex;
   justify-content: space-between;
