@@ -503,10 +503,12 @@ textarea {
 }
 
 .sleep-card input {
+  display: block;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  text-align: center;
 }
 
 .sleep-fix-marker {
@@ -1150,6 +1152,10 @@ label {
 }
 
 @media (max-width: 479px) {
+  .step-card {
+    padding-inline: 18px;
+  }
+
   .sleep-card,
   .form-card.two.sleep-card {
     display: grid;
@@ -1157,7 +1163,7 @@ label {
     column-gap: 12px;
     row-gap: 0;
     width: 100%;
-    padding: 16px;
+    padding: 12px;
     box-sizing: border-box;
   }
 
@@ -1167,5 +1173,20 @@ label {
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
+  }
+
+  .sleep-card input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 50px;
+    padding: 0 6px;
+    border-radius: 19px;
+    font-size: 0.92rem;
+    line-height: 50px;
+    text-align: center;
+  }
+
+  .sleep-card input[type="time"]::-webkit-date-and-time-value {
+    text-align: center;
   }
 }
