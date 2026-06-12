@@ -27,22 +27,22 @@ export function generateMonthlyPlan(state: PlannerState): GeneratedSchedule {
   const fixedEvents = buildFixedEvents(state, monthCursor, days);
   const planned = fixedEvents.map(toLockedTask);
 
-  const week = activePlanningWeek(state.plannedMonth);
+  const planningRange = monthPlanningRange(monthCursor, days);
   const flexibleTasks = buildFlexibleTasks(state);
 
-  addDeadlinePrepBlocks(state, planned, explanations, week);
-  addRecoveryBlocks(state, planned, explanations, monthCursor, days, week);
-  addMealPrepBeforeWorkHeavyDays(state, planned, explanations, week);
-  placeFlexibleTasks(state, flexibleTasks, planned, explanations, week);
+  addDeadlinePrepBlocks(state, planned, explanations, planningRange);
+  addRecoveryBlocks(state, planned, explanations, monthCursor, days, planningRange);
+  addMealPrepBeforeWorkHeavyDays(state, planned, explanations, planningRange);
+  placeFlexibleTasks(state, flexibleTasks, planned, explanations, planningRange);
 
   explanations.unshift({
     id: "monthly-fixed-baseline",
-    message: "Fixed monthly commitments were locked first. Weekly planning only adjusted flexible tasks."
+    message: "Fixed monthly commitments were locked first. Flexible routines were then placed across the month."
   });
   explanations.unshift({
-    id: `weekly-capacity-${week.start}`,
-    date: week.start,
-    message: `This week is in ${capacityLabel(state.capacity)} mode, so flexible tasks were adjusted around fixed commitments.`
+    id: `monthly-capacity-${planningRange.start}`,
+    date: planningRange.start,
+    message: `${capacityLabel(state.capacity)} mode was used to place flexible tasks around fixed commitments for the month.`
   });
 
   return {
@@ -286,45 +286,50 @@ function placeFlexibleTasks(
   flexibleTasks: FlexibleTask[],
   planned: PlannedTask[],
   explanations: Explanation[],
-  week: { start: string; end: string }
+  range: { start: string; end: string }
 ) {
+  const weeks = weeksInRange(range.start, range.end);
+
   flexibleTasks
     .filter((task) => task.active)
     .forEach((task) => {
-      const targetCount = targetWeeklyCount(task, state.capacity);
-      if (targetCount === 0) {
-        explanations.push({
-          id: `paused-${task.id}-${week.start}`,
-          message: `${task.title} was reduced this week because ${capacityLabel(state.capacity)} mode prioritises essentials and recovery.`
-        });
-        return;
-      }
-
-      const candidateDays = rankedWeekDays(task, week, planned);
-      let placed = 0;
-      for (const date of candidateDays) {
-        if (placed >= targetCount) break;
-        if (task.frequency !== "daily" && planned.some((item) => item.sourceId === task.id && item.date === date)) continue;
-
-        const placedTask = tryPlaceFlexibleTask(state, task, planned, date);
-        if (placedTask) {
-          planned.push(placedTask);
+      weeks.forEach((week) => {
+        const targetCount = targetWeeklyCount(task, state.capacity);
+        if (targetCount === 0) {
           explanations.push({
-            id: `${placedTask.id}-explanation`,
-            taskId: placedTask.id,
-            date,
-            message: placedTask.explanation ?? `${task.title} was placed in the best available rule-safe slot.`
+            id: `paused-${task.id}-${week.start}`,
+            message: `${task.title} was reduced this week because ${capacityLabel(state.capacity)} mode prioritises essentials and recovery.`
           });
-          placed += 1;
+          return;
         }
-      }
 
-      if (placed < targetCount) {
-        explanations.push({
-          id: `shortfall-${task.id}-${week.start}`,
-          message: `${task.title} was only scheduled ${placed}/${targetCount} times because fixed commitments and hard rules limited safe slots.`
-        });
-      }
+        const candidateDays = rankedWeekDays(task, week, planned);
+        let placed = 0;
+        for (const date of candidateDays) {
+          if (placed >= targetCount) break;
+          if (!inRange(date, range.start, range.end)) continue;
+          if (task.frequency !== "daily" && planned.some((item) => item.sourceId === task.id && item.date === date)) continue;
+
+          const placedTask = tryPlaceFlexibleTask(state, task, planned, date);
+          if (placedTask) {
+            planned.push(placedTask);
+            explanations.push({
+              id: `${placedTask.id}-explanation`,
+              taskId: placedTask.id,
+              date,
+              message: placedTask.explanation ?? `${task.title} was placed in the best available rule-safe slot.`
+            });
+            placed += 1;
+          }
+        }
+
+        if (placed < targetCount) {
+          explanations.push({
+            id: `shortfall-${task.id}-${week.start}`,
+            message: `${task.title} was only scheduled ${placed}/${targetCount} times this week because fixed commitments and hard rules limited safe slots.`
+          });
+        }
+      });
     });
 }
 
@@ -450,16 +455,27 @@ function explainPlacement(task: FlexibleTask, date: string, planned: PlannedTask
   return `${task.title} was placed in the best available rule-safe slot.`;
 }
 
-function activePlanningWeek(plannedMonth: string) {
-  const today = isoToday();
-  const base = today.startsWith(plannedMonth) ? today : `${plannedMonth}-01`;
-  const cursor = new Date(`${base}T12:00:00`);
+function monthPlanningRange(monthCursor: Date, days: number) {
+  const start = isoDate(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1));
+  const end = isoDate(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), days));
+  return { start, end };
+}
+
+function weeksInRange(start: string, end: string) {
+  const weeks: Array<{ start: string; end: string }> = [];
+  const cursor = new Date(`${start}T12:00:00`);
   const day = cursor.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  cursor.setDate(cursor.getDate() + mondayOffset);
-  const start = isoDate(cursor);
-  cursor.setDate(cursor.getDate() + 6);
-  return { start, end: isoDate(cursor) };
+  cursor.setDate(cursor.getDate() + (day === 0 ? -6 : 1 - day));
+
+  while (isoDate(cursor) <= end) {
+    const weekStart = isoDate(cursor);
+    cursor.setDate(cursor.getDate() + 6);
+    const weekEnd = isoDate(cursor);
+    weeks.push({ start: weekStart, end: weekEnd });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return weeks;
 }
 
 function adjustedDuration(effort: EffortLevel, capacity: CapacityMode, configuredDuration?: number) {

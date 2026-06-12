@@ -202,6 +202,8 @@ export function App() {
     "Notification" in window ? Notification.permission : "unsupported"
   );
   const stepRef = useRef(step);
+  const isHandlingBrowserBack = useRef(false);
+  const lastHistoryStep = useRef<FlowStep | null>(null);
 
   useEffect(() => {
     const today = isoToday();
@@ -210,7 +212,7 @@ export function App() {
     service.load(monthKey)
       .then(async (loaded) => {
         const withCurrentMonth = loaded.plannedMonth === monthKey ? loaded : { ...loaded, plannedMonth: monthKey, setupComplete: false };
-        const withPlan = withCurrentMonth.setupComplete && withCurrentMonth.plannedTasks.length === 0 ? await service.generate(withCurrentMonth) : withCurrentMonth;
+        const withPlan = withCurrentMonth.setupComplete ? await service.generate(withCurrentMonth) : withCurrentMonth;
         setFlexibleConfigs(configsFromRoutines(withPlan.routines));
         setSelectedDate(null);
         setStep("start");
@@ -222,11 +224,23 @@ export function App() {
   useEffect(() => {
     stepRef.current = step;
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
+
+    if (isHandlingBrowserBack.current) {
+      isHandlingBrowserBack.current = false;
+      lastHistoryStep.current = step;
+      return;
+    }
+
+    if (lastHistoryStep.current !== step) {
+      window.history.pushState({ futureMe: true, step }, "", window.location.href);
+      lastHistoryStep.current = step;
+    }
   }, [step, selectedDate]);
 
   useEffect(() => {
-    window.history.replaceState({ futureMe: true }, "", window.location.href);
-    window.history.pushState({ futureMe: true }, "", window.location.href);
+    window.history.replaceState({ futureMe: true, step: stepRef.current }, "", window.location.href);
+    window.history.pushState({ futureMe: true, step: stepRef.current, guard: true }, "", window.location.href);
+    lastHistoryStep.current = stepRef.current;
 
     const onPopState = () => {
       const currentStep = stepRef.current;
@@ -235,6 +249,7 @@ export function App() {
         return;
       }
 
+      isHandlingBrowserBack.current = true;
       if (currentStep === "review") {
         setStep("month");
       } else if (currentStep === "calendar") {
@@ -242,7 +257,7 @@ export function App() {
       } else {
         setStep(previousStep(currentStep));
       }
-      window.history.pushState({ futureMe: true }, "", window.location.href);
+      window.history.pushState({ futureMe: true, step: stepRef.current, guard: true }, "", window.location.href);
     };
 
     window.addEventListener("popstate", onPopState);
@@ -286,7 +301,7 @@ export function App() {
     const monthKey = today.slice(0, 7);
     if (!state || state.plannedMonth !== monthKey) {
       const loaded = await service.load(monthKey);
-      const withPlan = loaded.setupComplete && loaded.plannedTasks.length === 0 ? await service.generate(loaded) : loaded;
+      const withPlan = loaded.setupComplete ? await service.generate(loaded) : loaded;
       setState(withPlan);
       setFlexibleConfigs(configsFromRoutines(withPlan.routines));
       setSelectedDate(null);
@@ -328,7 +343,7 @@ export function App() {
 
   async function changePlanMonth(monthKey: string, completedStep: FlowStep = "review") {
     const loaded = await service.load(monthKey);
-    const withPlan = loaded.setupComplete && loaded.plannedTasks.length === 0 ? await service.generate(loaded) : loaded;
+    const withPlan = loaded.setupComplete ? await service.generate(loaded) : loaded;
     setState(withPlan);
     setFlexibleConfigs(configsFromRoutines(withPlan.routines));
     setFixedDraft(emptyFixedDraft(withPlan.plannedMonth));
