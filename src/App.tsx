@@ -16,6 +16,16 @@ import { categoryLabels } from "./models/types";
 
 const service = new PlannerService();
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice?: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+type InstallControls = {
+  isStandalone: boolean;
+  onInstall: () => void;
+};
+
 type FlowStep =
   | "start"
   | "loading"
@@ -184,7 +194,9 @@ export function App() {
   const [flexibleConfigs, setFlexibleConfigs] = useState<FlexibleConfig[]>(defaultFlexibleConfigs);
   const [realToday, setRealToday] = useState(isoToday());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallInstructions, setShowInstallInstructions] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(isStandaloneMode());
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | "unsupported">(
     "Notification" in window ? Notification.permission : "unsupported"
   );
@@ -218,10 +230,19 @@ export function App() {
   useEffect(() => {
     const listener = (event: Event) => {
       event.preventDefault();
-      setInstallPrompt(event);
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const appInstalledListener = () => {
+      setInstallPrompt(null);
+      setIsStandalone(true);
     };
     window.addEventListener("beforeinstallprompt", listener);
-    return () => window.removeEventListener("beforeinstallprompt", listener);
+    window.addEventListener("appinstalled", appInstalledListener);
+    setIsStandalone(isStandaloneMode());
+    return () => {
+      window.removeEventListener("beforeinstallprompt", listener);
+      window.removeEventListener("appinstalled", appInstalledListener);
+    };
   }, []);
 
   async function update(next: PlannerState) {
@@ -426,6 +447,27 @@ export function App() {
     }
   }
 
+  async function handleInstallApp() {
+    if (isStandaloneMode()) {
+      setIsStandalone(true);
+      return;
+    }
+
+    if (installPrompt && !isIosSafari()) {
+      await installPrompt.prompt();
+      await installPrompt.userChoice?.catch(() => undefined);
+      setInstallPrompt(null);
+      return;
+    }
+
+    setShowInstallInstructions(true);
+  }
+
+  const installControls = {
+    isStandalone,
+    onInstall: handleInstallApp
+  };
+
   if (loadError) return <Loading message={loadError} />;
   if (!state) return <Loading message="FutureMe" />;
 
@@ -438,7 +480,7 @@ export function App() {
         visibleDate={visibleDate}
         realToday={realToday}
         isViewingToday={selectedDate === null || selectedDate === realToday}
-        installPrompt={installPrompt}
+        installControls={installControls}
         notificationStatus={notificationStatus}
         onDateChange={setSelectedDate}
         onToday={() => setSelectedDate(null)}
@@ -447,7 +489,9 @@ export function App() {
         onWeeklyCheck={() => setStep("capacity")}
         onComplete={(task) => patchTask(task.id, { completed: true, missed: false })}
         onRequestNotifications={requestNotifications}
-      />
+      >
+        <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
+      </DailyApp>
     );
   }
 
@@ -456,7 +500,7 @@ export function App() {
       <MonthCalendarApp
         state={state}
         realToday={realToday}
-        installPrompt={installPrompt}
+        installControls={installControls}
         onBack={() => setStep("review")}
         onMonthChange={(monthKey) => changePlanMonth(monthKey, "calendar")}
         onSelectDate={(date) => {
@@ -468,12 +512,14 @@ export function App() {
           setStep("review");
         }}
         onWeeklyCheck={() => setStep("capacity")}
-      />
+      >
+        <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
+      </MonthCalendarApp>
     );
   }
 
   return (
-    <FlowShell step={step} state={state} installPrompt={installPrompt} onBack={() => setStep(previousStep(step))}>
+    <FlowShell step={step} state={state} installControls={installControls} onBack={() => setStep(previousStep(step))}>
       {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} />}
       {step === "loading" && <FutureMeLoading />}
       {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onNext={() => setStep("flexible")} />}
@@ -493,6 +539,7 @@ export function App() {
       {step === "capacity" && <CapacityStep state={state} onUpdate={update} onNext={state.setupComplete ? completeWeeklyCapacityCheck : () => setStep("personality")} />}
       {step === "personality" && <PersonalityStep state={state} onUpdate={update} onNext={completeSetup} />}
       {step === "generating" && <GenerateStep />}
+      <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
     </FlowShell>
   );
 }
@@ -501,13 +548,13 @@ function FlowShell({
   children,
   step,
   state,
-  installPrompt,
+  installControls,
   onBack
 }: {
   children: React.ReactNode;
   step: FlowStep;
   state: PlannerState;
-  installPrompt: any;
+  installControls: InstallControls;
   onBack: () => void;
 }) {
   const progress = Math.max(1, setupSteps.indexOf(step) + 1);
@@ -521,7 +568,7 @@ function FlowShell({
           <div className="progress-track" aria-label={`Step ${progress} of ${total}`}>
             <span style={{ width: `${Math.min(100, (progress / total) * 100)}%` }} />
           </div>
-          <button className="ghost-icon" aria-label="Install app" onClick={() => installPrompt?.prompt()} disabled={!installPrompt}>+</button>
+          <InstallButton controls={installControls} />
         </header>
       )}
       <div className="flow-content">{children}</div>
@@ -796,7 +843,7 @@ function DailyApp({
   visibleDate,
   realToday,
   isViewingToday,
-  installPrompt,
+  installControls,
   notificationStatus,
   onDateChange,
   onToday,
@@ -804,13 +851,14 @@ function DailyApp({
   onPlan,
   onWeeklyCheck,
   onComplete,
-  onRequestNotifications
+  onRequestNotifications,
+  children
 }: {
   state: PlannerState;
   visibleDate: string;
   realToday: string;
   isViewingToday: boolean;
-  installPrompt: any;
+  installControls: InstallControls;
   notificationStatus: NotificationPermission | "unsupported";
   onDateChange: (date: string) => void;
   onToday: () => void;
@@ -819,6 +867,7 @@ function DailyApp({
   onWeeklyCheck: () => void;
   onComplete: (task: PlannedTask) => void;
   onRequestNotifications: () => void;
+  children?: React.ReactNode;
 }) {
   const tasks = daySchedule(state, visibleDate);
   const nextTask = tasks.find((task) => !task.completed && task.sourceType !== "sleep");
@@ -831,7 +880,7 @@ function DailyApp({
           <h1>{formatDateLong(visibleDate)}</h1>
           <span>{capacityTitle(state.capacity)}</span>
         </div>
-        <button className="ghost-icon filled" onClick={() => installPrompt?.prompt()} disabled={!installPrompt} aria-label="Install app">+</button>
+        <InstallButton controls={installControls} filled />
       </header>
 
       <section className="today-card">
@@ -876,6 +925,7 @@ function DailyApp({
         <button onClick={onWeeklyCheck}>Energy</button>
         <button onClick={onPlan}>Month</button>
       </nav>
+      {children}
     </main>
   );
 }
@@ -883,21 +933,23 @@ function DailyApp({
 function MonthCalendarApp({
   state,
   realToday,
-  installPrompt,
+  installControls,
   onBack,
   onMonthChange,
   onSelectDate,
   onToday,
-  onWeeklyCheck
+  onWeeklyCheck,
+  children
 }: {
   state: PlannerState;
   realToday: string;
-  installPrompt: any;
+  installControls: InstallControls;
   onBack: () => void;
   onMonthChange: (monthKey: string) => void;
   onSelectDate: (date: string) => void;
   onToday: () => void;
   onWeeklyCheck: () => void;
+  children?: React.ReactNode;
 }) {
   const days = monthDays(state.plannedMonth);
   return (
@@ -909,7 +961,7 @@ function MonthCalendarApp({
           <h1>{monthLabel(state.plannedMonth)}</h1>
           <span>Tap a day to see what FutureMe placed there.</span>
         </div>
-        <button className="ghost-icon filled" onClick={() => installPrompt?.prompt()} disabled={!installPrompt} aria-label="Install app">+</button>
+        <InstallButton controls={installControls} filled />
       </header>
 
       <section className="month-picker calendar-month-switcher">
@@ -944,7 +996,42 @@ function MonthCalendarApp({
         <button onClick={onWeeklyCheck}>Energy</button>
         <button className="active">Month</button>
       </nav>
+      {children}
     </main>
+  );
+}
+
+function InstallButton({ controls, filled = false }: { controls: InstallControls; filled?: boolean }) {
+  if (controls.isStandalone) return null;
+
+  return (
+    <button
+      type="button"
+      className={filled ? "ghost-icon filled install-button" : "ghost-icon install-button"}
+      aria-label="Install FutureMe"
+      onClick={controls.onInstall}
+    >
+      +
+    </button>
+  );
+}
+
+function InstallInstructionsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null;
+
+  return (
+    <div className="install-modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="install-modal" role="dialog" aria-modal="true" aria-labelledby="install-modal-title" onClick={(event) => event.stopPropagation()}>
+        <h2 id="install-modal-title">Add FutureMe to your Home Screen</h2>
+        <ol>
+          <li>Tap the Share button in Safari</li>
+          <li>Scroll down</li>
+          <li>Tap "Add to Home Screen"</li>
+          <li>Tap "Add"</li>
+        </ol>
+        <button type="button" className="bottom-action" onClick={onClose}>Got it</button>
+      </section>
+    </div>
   );
 }
 
@@ -1176,6 +1263,17 @@ function isoWeekKey(date: string) {
 
 function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function isStandaloneMode() {
+  return window.matchMedia("(display-mode: standalone)").matches || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
+function isIosSafari() {
+  const ua = window.navigator.userAgent;
+  const isIos = /iPad|iPhone|iPod/.test(ua) || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
+  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|Chrome|Android/.test(ua);
+  return isIos && isSafari;
 }
 
 function delay(ms: number) {
