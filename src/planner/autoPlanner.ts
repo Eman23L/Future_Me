@@ -396,7 +396,7 @@ function canPlace({
 
 function targetWeeklyCount(task: FlexibleTask, capacity: CapacityMode) {
   if (capacity === "survival") {
-    return task.priority === "essential" || task.category === "self-care" || task.category === "food-shop" ? 1 : 0;
+    return task.priority === "essential" || task.category === "self-care" || task.category === "food-shop" || task.category === "meal-prep" ? 1 : 0;
   }
 
   const base = task.frequency === "daily"
@@ -410,12 +410,12 @@ function targetWeeklyCount(task: FlexibleTask, capacity: CapacityMode) {
           : 1;
 
   if (capacity === "tired") {
-    if (task.category === "gym") return Math.min(base, 2);
-    if (task.effort === "high") return Math.min(base, 1);
-    return Math.min(base, 3);
+    if (task.category === "gym") return Math.max(1, Math.min(base - 1, 2));
+    if (task.effort === "high") return Math.max(1, base - 1);
+    return Math.max(1, Math.min(base, 3));
   }
 
-  if (capacity === "normal" && task.effort === "high") return Math.min(base, 2);
+  if (capacity === "high" && task.frequency !== "daily") return Math.min(base + 1, 5);
   return base;
 }
 
@@ -491,10 +491,19 @@ function candidateSlots(preferred: string, wake: string, bed: string) {
     addMinutes(preferred, -60),
     addMinutes(preferred, 60),
     addMinutes(wake, 45),
+    addMinutes(wake, 90),
+    addMinutes(wake, 150),
+    "07:00",
+    "08:00",
     "09:30",
+    "10:30",
     "11:30",
+    "13:00",
     "14:30",
+    "16:00",
     "17:30",
+    "18:30",
+    "19:30",
     addMinutes(bed, -120)
   ]);
 }
@@ -517,7 +526,7 @@ function violatesMorningAfterLateShift(planned: PlannedTask[], date: string, sta
 }
 
 function violatesDemandingLimit(state: PlannerState, planned: PlannedTask[], date: string, effort: EffortLevel) {
-  const enforce = state.rules.selected.includes("avoid-more-than-2-demanding") || state.capacity !== "high";
+  const enforce = state.rules.selected.includes("avoid-more-than-2-demanding") || state.capacity === "tired" || state.capacity === "survival";
   return enforce && effortRank[effort] > 1 && demandingTasksForDate(planned, date) >= demandingLimit[state.capacity];
 }
 

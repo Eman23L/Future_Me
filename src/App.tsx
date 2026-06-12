@@ -202,7 +202,6 @@ export function App() {
     "Notification" in window ? Notification.permission : "unsupported"
   );
   const stepRef = useRef(step);
-  const isHandlingBrowserBack = useRef(false);
   const lastHistoryStep = useRef<FlowStep | null>(null);
 
   useEffect(() => {
@@ -225,12 +224,6 @@ export function App() {
     stepRef.current = step;
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
 
-    if (isHandlingBrowserBack.current) {
-      isHandlingBrowserBack.current = false;
-      lastHistoryStep.current = step;
-      return;
-    }
-
     if (lastHistoryStep.current !== step) {
       window.history.pushState({ futureMe: true, step }, "", window.location.href);
       lastHistoryStep.current = step;
@@ -249,15 +242,21 @@ export function App() {
         return;
       }
 
-      isHandlingBrowserBack.current = true;
+      const targetStep = currentStep === "review"
+        ? "month"
+        : currentStep === "calendar"
+          ? "review"
+          : previousStep(currentStep);
+
       if (currentStep === "review") {
-        setStep("month");
+        setStep(targetStep);
       } else if (currentStep === "calendar") {
-        setStep("review");
+        setStep(targetStep);
       } else {
-        setStep(previousStep(currentStep));
+        setStep(targetStep);
       }
-      window.history.pushState({ futureMe: true, step: stepRef.current, guard: true }, "", window.location.href);
+      lastHistoryStep.current = targetStep;
+      window.history.pushState({ futureMe: true, step: targetStep, guard: true }, "", window.location.href);
     };
 
     window.addEventListener("popstate", onPopState);
