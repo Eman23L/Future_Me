@@ -577,6 +577,7 @@ function MonthSetupStep({
         <label>Wake-up time<input type="time" value={state.settings.wakeTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, wakeTime: event.target.value } })} /></label>
         <label>Bedtime<input type="time" value={state.settings.bedTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, bedTime: event.target.value } })} /></label>
       </div>
+      <p className="sleep-fix-marker">Sleep oval spacing fix v5</p>
       <button className="bottom-action" onClick={onNext}>Continue</button>
     </StepCard>
   );

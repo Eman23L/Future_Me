@@ -475,19 +475,34 @@ textarea {
 
 .sleep-card {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 0;
+  width: 100%;
+  box-sizing: border-box;
   margin-top: 18px;
+  padding: 16px;
 }
 
 .sleep-card label {
   width: 100%;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .sleep-card input {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
+}
+
+.sleep-fix-marker {
+  margin: 8px 0 0;
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 label {
@@ -1118,7 +1133,7 @@ label {
   }
 
   .sleep-card {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 
@@ -1126,13 +1141,19 @@ label {
   .sleep-card,
   .form-card.two.sleep-card {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 16px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 0;
+    width: 100%;
+    padding: 16px;
+    box-sizing: border-box;
   }
 
   .sleep-card label,
   .sleep-card input {
     width: 100%;
+    max-width: 100%;
     min-width: 0;
+    box-sizing: border-box;
   }
 }
