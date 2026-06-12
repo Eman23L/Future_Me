@@ -73,13 +73,17 @@ button:disabled {
 input,
 select,
 textarea {
+  display: block;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 56px;
   border: 1px solid rgba(214, 176, 186, 0.42);
   border-radius: 22px;
   padding: 14px 16px;
   background: rgba(255, 255, 255, 0.86);
   color: var(--ink);
+  box-sizing: border-box;
   outline-color: var(--rose);
 }
 
@@ -483,6 +487,7 @@ textarea {
   background: rgba(255, 255, 255, 0.68);
   border: 1px solid rgba(214, 176, 186, 0.28);
   box-shadow: 0 10px 26px rgba(116, 75, 88, 0.055);
+  overflow: hidden;
 }
 
 .form-card.two {
@@ -569,9 +574,12 @@ textarea {
 label {
   display: grid;
   gap: 10px;
+  width: 100%;
+  min-width: 0;
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 700;
+  box-sizing: border-box;
 }
 
 .switch-row,
@@ -1201,6 +1209,33 @@ label {
 @media (max-width: 479px) {
   .step-card {
     padding-inline: 18px;
+  }
+
+  .form-card {
+    padding: 16px;
+    overflow: hidden;
+  }
+
+  .form-card label,
+  .form-card input,
+  .form-card select,
+  .form-card textarea {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .form-card input[type="time"],
+  .form-card input[type="date"],
+  .form-card select {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .form-card input[type="time"] {
+    padding-inline: 8px;
+    text-align: center;
   }
 
   .sleep-card,
