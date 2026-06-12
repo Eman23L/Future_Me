@@ -474,7 +474,7 @@ export function App() {
 
   return (
     <FlowShell step={step} state={state} installPrompt={installPrompt} onBack={() => setStep(previousStep(step))}>
-      {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={state.setupComplete ? continueCurrentPlan : beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} />}
+      {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} />}
       {step === "loading" && <FutureMeLoading />}
       {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onNext={() => setStep("flexible")} />}
       {step === "work-time" && <WorkTimeStep draft={workDraft} onDraftChange={setWorkDraft} onNext={() => setStep("work-dates")} />}
@@ -547,12 +547,10 @@ function StartScreen({
       <h1>Welcome to your gentle plan</h1>
       <p>Tell me what is already in your month, and I will shape the rest around your time, energy and care.</p>
       <button className="bottom-action" onClick={onSetup}>Set up</button>
-      {hasSavedData && (
-        <div className="welcome-actions">
-          <button className="secondary-action" onClick={onContinue}>Continue current plan</button>
-          <button className="secondary-action" onClick={onStartNewMonth}>Start new month</button>
-        </div>
-      )}
+      <div className="welcome-actions">
+        <button className="secondary-action" onClick={onContinue} disabled={!hasSavedData}>Continue current plan</button>
+        <button className="secondary-action" onClick={onStartNewMonth}>Start new month</button>
+      </div>
     </section>
   );
 }
