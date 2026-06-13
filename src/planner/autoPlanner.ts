@@ -14,10 +14,49 @@ import type {
 const effortRank: Record<EffortLevel, number> = { low: 1, medium: 2, high: 3 };
 const routineDurations: Record<EffortLevel, number> = { low: 35, medium: 60, high: 80 };
 const demandingLimit: Record<CapacityMode, number> = {
-  high: 3,
-  normal: 2,
+  high: 2,
+  normal: 1,
   tired: 1,
   survival: 0
+};
+
+const capacityFrequency: Record<CapacityMode, Partial<Record<FlexibleTask["category"], number>>> = {
+  high: {
+    gym: 3,
+    cleaning: 2,
+    "meal-prep": 3,
+    "food-shop": 2,
+    "self-care": 4
+  },
+  normal: {
+    gym: 2,
+    cleaning: 1,
+    "meal-prep": 2,
+    "food-shop": 2,
+    "self-care": 4
+  },
+  tired: {
+    gym: 1,
+    cleaning: 1,
+    "meal-prep": 1,
+    "food-shop": 1,
+    "self-care": 5
+  },
+  survival: {
+    gym: 0,
+    cleaning: 0,
+    "meal-prep": 1,
+    "food-shop": 0,
+    "self-care": 5
+  }
+};
+
+const flexibleEffort: Partial<Record<FlexibleTask["category"], EffortLevel>> = {
+  gym: "high",
+  cleaning: "medium",
+  "meal-prep": "medium",
+  "food-shop": "medium",
+  "self-care": "low"
 };
 
 export function generateMonthlyPlan(state: PlannerState): GeneratedSchedule {
@@ -106,7 +145,7 @@ function toFlexibleTask(routine: Routine): FlexibleTask {
     preferredDay: routine.preferredDay,
     preferredTime: routine.preferredTime,
     frequency: routine.frequency,
-    effort: routine.effort,
+    effort: flexibleEffort[routine.category] ?? routine.effort,
     durationMinutes: routine.durationMinutes,
     priority: routine.priority ?? (routine.category === "self-care" || routine.category === "food-shop" ? "high" : "medium"),
     lock: "flexible",
@@ -298,7 +337,7 @@ function placeFlexibleTasks(
         if (targetCount === 0) {
           explanations.push({
             id: `paused-${task.id}-${week.start}`,
-            message: `${task.title} was reduced this week because ${capacityLabel(state.capacity)} mode prioritises essentials and recovery.`
+            message: `${task.title} was skipped this week because you chose ${capacityLabel(state.capacity)}.`
           });
           return;
         }
@@ -308,7 +347,7 @@ function placeFlexibleTasks(
         for (const date of candidateDays) {
           if (placed >= targetCount) break;
           if (!inRange(date, range.start, range.end)) continue;
-          if (task.frequency !== "daily" && planned.some((item) => item.sourceId === task.id && item.date === date)) continue;
+          if (planned.some((item) => item.sourceId === task.id && item.date === date)) continue;
 
           const placedTask = tryPlaceFlexibleTask(state, task, planned, date);
           if (placedTask) {
@@ -335,7 +374,7 @@ function placeFlexibleTasks(
 
 function tryPlaceFlexibleTask(state: PlannerState, task: FlexibleTask, planned: PlannedTask[], date: string): PlannedTask | null {
   const duration = adjustedDuration(task.effort, state.capacity, task.durationMinutes);
-  const candidateTimes = candidateSlots(task.preferredTime, state.settings.wakeTime, state.settings.bedTime);
+  const candidateTimes = candidateSlots(task, state.settings.wakeTime, state.settings.bedTime);
   const day = new Date(`${date}T12:00:00`);
 
   for (const startTime of candidateTimes) {
@@ -389,39 +428,19 @@ function canPlace({
   if (violatesStudyCutoff(state, category, startTime)) return false;
   if (violatesLongShiftGymRule(state, planned, date, category)) return false;
   if (violatesMorningAfterLateShift(planned, date, startTime, category)) return false;
-  if (violatesDemandingLimit(state, planned, date, effort)) return false;
+  if (violatesAfterLongShift(planned, date, startTime, category)) return false;
+  if (violatesCategoryTimeRules(category, startTime, state.capacity)) return false;
+  if (violatesDemandingLimit(state, planned, date, effort, category)) return false;
   if (state.rules.selected.includes("no-high-effort-after-long-shifts") && effort === "high" && workOnDate(planned, date)) return false;
   return true;
 }
 
 function targetWeeklyCount(task: FlexibleTask, capacity: CapacityMode) {
-  if (capacity === "survival") {
-    return task.priority === "essential" || task.category === "self-care" || task.category === "food-shop" || task.category === "meal-prep" ? 1 : 0;
-  }
-
-  const base = task.frequency === "daily"
-    ? 7
-    : task.frequency === "3x-weekly"
-      ? 3
-      : task.frequency === "4x-weekly"
-        ? 4
-        : task.frequency === "2x-weekly"
-          ? 2
-          : 1;
-
-  if (capacity === "tired") {
-    if (task.category === "gym") return Math.max(1, Math.min(base - 1, 2));
-    if (task.effort === "high") return Math.max(1, base - 1);
-    return Math.max(1, Math.min(base, 3));
-  }
-
-  if (capacity === "high" && task.frequency !== "daily") return Math.min(base + 1, 5);
-  return base;
+  return capacityFrequency[capacity][task.category] ?? 0;
 }
 
 function rankedWeekDays(task: FlexibleTask, week: { start: string; end: string }, planned: PlannedTask[]) {
   const days = daysBetween(week.start, week.end);
-  if (task.frequency === "daily") return days;
 
   return [...days].sort((a, b) => {
     const aScore = dayScore(task, a, planned);
@@ -433,21 +452,40 @@ function rankedWeekDays(task: FlexibleTask, week: { start: string; end: string }
 function dayScore(task: FlexibleTask, date: string, planned: PlannedTask[]) {
   const day = new Date(`${date}T12:00:00`);
   let score = day.getDay() === task.preferredDay ? 8 : 4;
+  const flexibleDemanding = demandingFlexibleTasksForDate(planned, date);
+  if (flexibleDemanding > 0) score -= flexibleDemanding * 6;
   if (workOnDate(planned, date)) score -= task.effort === "high" ? 6 : 2;
+  if (hasLongShift(planned, date)) score -= task.category === "gym" || task.category === "cleaning" || task.category === "food-shop" ? 10 : 4;
   if (hasLateShift(planned, offsetDate(date, -1))) score -= task.category === "gym" ? 8 : 3;
   score -= demandingTasksForDate(planned, date) * 2;
   return score;
 }
 
 function explainPlacement(task: FlexibleTask, date: string, planned: PlannedTask[], state: PlannerState, day: Date) {
-  if (hasLateShift(planned, offsetDate(date, -1)) && task.category !== "gym") {
-    return `${task.title} was placed gently after a late-shift day while avoiding early gym.`;
+  if (task.category === "gym") {
+    return "Gym was placed in the morning because that is your preferred gym window.";
+  }
+  if (task.category === "food-shop") {
+    return "Food shop was placed in the afternoon because shops are more realistic then.";
+  }
+  if (task.category === "meal-prep") {
+    return workOnDate(planned, offsetDate(date, 1))
+      ? "Meal prep was kept because it supports work-heavy weeks."
+      : "Meal prep was placed in the afternoon because food prep fits better then.";
+  }
+  if (task.category === "cleaning") {
+    return "Cleaning was placed in a morning or afternoon window to avoid late-night chores.";
+  }
+  if (task.category === "self-care") {
+    return state.capacity === "tired" || state.capacity === "survival"
+      ? "Self-care was increased this week because you chose a softer week."
+      : "Self-care was placed in the evening so the day can settle gently.";
   }
   if (workOnDate(planned, date)) {
     return `${task.title} was placed around fixed work commitments.`;
   }
   if (state.capacity === "tired") {
-    return `${task.title} was kept lighter because this week is in Tired mode.`;
+    return `${task.title} was kept lighter because you chose a softer week.`;
   }
   if (day.getDay() === task.preferredDay) {
     return `${task.title} was placed on your preferred day.`;
@@ -485,27 +523,17 @@ function adjustedDuration(effort: EffortLevel, capacity: CapacityMode, configure
   return duration;
 }
 
-function candidateSlots(preferred: string, wake: string, bed: string) {
-  return unique([
-    preferred,
-    addMinutes(preferred, -60),
-    addMinutes(preferred, 60),
-    addMinutes(wake, 45),
-    addMinutes(wake, 90),
-    addMinutes(wake, 150),
-    "07:00",
-    "08:00",
-    "09:30",
-    "10:30",
-    "11:30",
-    "13:00",
-    "14:30",
-    "16:00",
-    "17:30",
-    "18:30",
-    "19:30",
-    addMinutes(bed, -120)
-  ]);
+function candidateSlots(task: FlexibleTask, wake: string, bed: string) {
+  const byCategory: Partial<Record<FlexibleTask["category"], string[]>> = {
+    gym: ["09:00", "10:00", "11:00", "08:00", "12:00"],
+    cleaning: ["10:00", "13:00", "11:00", "14:00", "09:00", "15:00"],
+    "meal-prep": ["15:00", "17:00", "14:00", "16:00", "18:00", "13:00"],
+    "food-shop": ["14:00", "16:00", "15:00", "13:00", "17:00", "18:00"],
+    "self-care": ["20:00", "19:00", "21:00", "18:00", "15:00", "13:00", "11:00"]
+  };
+
+  return unique([...(byCategory[task.category] ?? [task.preferredTime]), task.preferredTime])
+    .filter((time) => toMinutes(time) >= toMinutes(wake) && toMinutes(time) < toMinutes(bed));
 }
 
 function isSundayEveningProtected(state: PlannerState, day: Date, startTime: string) {
@@ -517,17 +545,38 @@ function violatesStudyCutoff(state: PlannerState, category: PlannedTask["categor
 }
 
 function violatesLongShiftGymRule(state: PlannerState, planned: PlannedTask[], date: string, category: PlannedTask["category"]) {
-  if (!state.rules.selected.includes("never-gym-after-long-shift") || category !== "gym") return false;
-  return planned.some((task) => task.date === date && task.category === "work" && minutesBetween(task.startTime, task.endTime) >= 12 * 60);
+  if (category !== "gym") return false;
+  return hasLongShift(planned, date);
 }
 
 function violatesMorningAfterLateShift(planned: PlannedTask[], date: string, startTime: string, category: PlannedTask["category"]) {
   return category === "gym" && toMinutes(startTime) < toMinutes("12:00") && hasLateShift(planned, offsetDate(date, -1));
 }
 
-function violatesDemandingLimit(state: PlannerState, planned: PlannedTask[], date: string, effort: EffortLevel) {
-  const enforce = state.rules.selected.includes("avoid-more-than-2-demanding") || state.capacity === "tired" || state.capacity === "survival";
-  return enforce && effortRank[effort] > 1 && demandingTasksForDate(planned, date) >= demandingLimit[state.capacity];
+function violatesAfterLongShift(planned: PlannedTask[], date: string, startTime: string, category: PlannedTask["category"]) {
+  if (category !== "food-shop" && category !== "cleaning") return false;
+  return planned.some((task) =>
+    task.date === date &&
+    task.category === "work" &&
+    minutesBetween(task.startTime, task.endTime) >= 12 * 60 &&
+    toMinutes(startTime) >= toMinutes(task.endTime)
+  );
+}
+
+function violatesCategoryTimeRules(category: PlannedTask["category"], startTime: string, capacity: CapacityMode) {
+  const minutes = toMinutes(startTime);
+  if (category === "gym") return capacity === "survival" || minutes < toMinutes("08:00") || minutes > toMinutes("12:00");
+  if (category === "food-shop") return capacity === "survival" || minutes < toMinutes("10:00") || minutes > toMinutes("18:00");
+  if (category === "meal-prep") return minutes < toMinutes("13:00") || minutes > toMinutes("19:00");
+  if (category === "cleaning") return capacity === "survival" || minutes < toMinutes("09:00") || minutes > toMinutes("16:00");
+  if (category === "self-care") return minutes < toMinutes("10:00") || minutes > toMinutes("22:00");
+  return false;
+}
+
+function violatesDemandingLimit(state: PlannerState, planned: PlannedTask[], date: string, effort: EffortLevel, category: PlannedTask["category"]) {
+  if (effortRank[effort] <= 1) return false;
+  if (state.capacity === "survival") return category !== "meal-prep";
+  return demandingFlexibleTasksForDate(planned, date) >= demandingLimit[state.capacity];
 }
 
 function workOnDate(planned: PlannedTask[], date: string) {
@@ -538,16 +587,26 @@ function hasLateShift(planned: PlannedTask[], date: string) {
   return planned.some((task) => task.date === date && task.category === "work" && (toMinutes(task.endTime) >= toMinutes("20:00") || toMinutes(task.endTime) < toMinutes(task.startTime)));
 }
 
+function hasLongShift(planned: PlannedTask[], date: string) {
+  return planned.some((task) => task.date === date && task.category === "work" && minutesBetween(task.startTime, task.endTime) >= 12 * 60);
+}
+
 function demandingTasksForDate(planned: PlannedTask[], date: string) {
   return planned.filter((task) => task.date === date && task.sourceType !== "sleep" && effortRank[task.effort] > 1).length;
+}
+
+function demandingFlexibleTasksForDate(planned: PlannedTask[], date: string) {
+  return planned.filter((task) => task.date === date && task.sourceType === "routine" && effortRank[task.effort] > 1).length;
 }
 
 function overlaps(tasks: PlannedTask[], date: string, start: string, end: string) {
   const startMinutes = toMinutes(start);
   const endMinutes = toMinutes(end);
+  const bufferedStart = startMinutes - 15;
+  const bufferedEnd = endMinutes + 15;
   return tasks
     .filter((task) => task.date === date && task.sourceType !== "sleep")
-    .some((task) => startMinutes < toMinutes(task.endTime) && endMinutes > toMinutes(task.startTime));
+    .some((task) => bufferedStart < toMinutes(task.endTime) && bufferedEnd > toMinutes(task.startTime));
 }
 
 function insideAwakeWindow(start: string, end: string, wake: string, bed: string) {
@@ -612,8 +671,8 @@ function unique(items: string[]) {
 }
 
 function capacityLabel(capacity: CapacityMode) {
-  if (capacity === "high") return "High Capacity";
-  if (capacity === "tired") return "Tired";
-  if (capacity === "survival") return "Survival Mode";
-  return "Normal";
+  if (capacity === "high") return "I have plenty in me";
+  if (capacity === "tired") return "I need a softer week";
+  if (capacity === "survival") return "Just the essentials";
+  return "I feel steady";
 }

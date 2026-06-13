@@ -788,6 +788,14 @@ label {
   color: var(--rose-dark);
 }
 
+.capacity-helper {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .weekday {
   display: grid;
   place-items: center;

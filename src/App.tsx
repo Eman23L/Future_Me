@@ -9,8 +9,7 @@ import type {
   NotificationPersonality,
   PlannedTask,
   PlannerState,
-  Routine,
-  RoutineFrequency
+  Routine
 } from "./models/types";
 import { categoryLabels } from "./models/types";
 
@@ -84,8 +83,6 @@ type FlexibleConfig = {
   active: boolean;
   durationMinutes: number;
   durationOptions: Array<{ label: string; value: number }>;
-  frequency: RoutineFrequency;
-  frequencyOptions: RoutineFrequency[];
   effort: EffortLevel;
   preferredDay: number;
   preferredTime: string;
@@ -99,10 +96,10 @@ const NOTIFICATIONS_ENABLED_KEY = "future-me:notifications-enabled";
 const PUSH_ENDPOINT_KEY = "future-me:push-endpoint";
 
 const capacities: Array<{ id: CapacityMode; title: string; detail: string }> = [
-  { id: "high", title: "I have plenty in me", detail: "A fuller week with room for the rituals you care about." },
-  { id: "normal", title: "I feel steady", detail: "A balanced plan with space to move through the week calmly." },
-  { id: "tired", title: "I need a softer week", detail: "Lighter days, fewer demanding tasks and more recovery space." },
-  { id: "survival", title: "Just the essentials", detail: "Only what matters most: fixed plans, sleep, food, care and recovery." }
+  { id: "high", title: "I have plenty in me", detail: "Plan a fuller week." },
+  { id: "normal", title: "I feel steady", detail: "Keep things balanced." },
+  { id: "tired", title: "I need a softer week", detail: "Reduce the pressure." },
+  { id: "survival", title: "Just the essentials", detail: "Only what really needs doing." }
 ];
 
 const personalities: Array<{ id: NotificationPersonality; title: string; sample: string }> = [
@@ -129,11 +126,9 @@ const defaultFlexibleConfigs: FlexibleConfig[] = [
     active: true,
     durationMinutes: 60,
     durationOptions: durationOptions([60, 90, 120]),
-    frequency: "3x-weekly",
-    frequencyOptions: ["weekly", "2x-weekly", "3x-weekly", "4x-weekly"],
     effort: "high",
     preferredDay: 1,
-    preferredTime: "17:30",
+    preferredTime: "09:00",
     priority: "medium"
   },
   {
@@ -144,11 +139,9 @@ const defaultFlexibleConfigs: FlexibleConfig[] = [
     active: true,
     durationMinutes: 60,
     durationOptions: durationOptions([30, 60, 90, 120]),
-    frequency: "weekly",
-    frequencyOptions: ["weekly", "2x-weekly"],
     effort: "medium",
     preferredDay: 6,
-    preferredTime: "11:30",
+    preferredTime: "10:00",
     priority: "medium"
   },
   {
@@ -159,11 +152,9 @@ const defaultFlexibleConfigs: FlexibleConfig[] = [
     active: true,
     durationMinutes: 120,
     durationOptions: durationOptions([60, 90, 120, 180]),
-    frequency: "weekly",
-    frequencyOptions: ["weekly", "2x-weekly"],
     effort: "medium",
     preferredDay: 0,
-    preferredTime: "16:00",
+    preferredTime: "15:00",
     priority: "high"
   },
   {
@@ -174,11 +165,9 @@ const defaultFlexibleConfigs: FlexibleConfig[] = [
     active: true,
     durationMinutes: 60,
     durationOptions: durationOptions([30, 60, 90, 120]),
-    frequency: "weekly",
-    frequencyOptions: ["weekly", "2x-weekly"],
-    effort: "low",
+    effort: "medium",
     preferredDay: 6,
-    preferredTime: "10:00",
+    preferredTime: "14:00",
     priority: "high"
   },
   {
@@ -189,8 +178,6 @@ const defaultFlexibleConfigs: FlexibleConfig[] = [
     active: true,
     durationMinutes: 60,
     durationOptions: durationOptions([30, 60, 90, 120]),
-    frequency: "2x-weekly",
-    frequencyOptions: ["weekly", "2x-weekly", "3x-weekly"],
     effort: "low",
     preferredDay: 2,
     preferredTime: "20:00",
@@ -433,7 +420,7 @@ export function App() {
       .map((config): Routine => ({
         id: `routine-${config.id}`,
         name: config.title,
-        frequency: config.frequency,
+        frequency: "weekly",
         preferredDay: config.preferredDay,
         preferredTime: config.preferredTime,
         effort: config.effort,
@@ -959,11 +946,7 @@ function FlexibleActivitiesStep({ configs, onChange, onNext }: { configs: Flexib
                     <button key={option.value} className={config.durationMinutes === option.value ? "option-pill selected" : "option-pill"} onClick={() => patch(config.id, { durationMinutes: option.value })}>{option.label}</button>
                   ))}
                 </div>
-                <div className="pill-row" aria-label={`${config.title} frequency`}>
-                  {config.frequencyOptions.map((frequency) => (
-                    <button key={frequency} className={config.frequency === frequency ? "option-pill selected" : "option-pill"} onClick={() => patch(config.id, { frequency })}>{frequencyLabel(frequency)}</button>
-                  ))}
-                </div>
+                <p className="capacity-helper">I'll decide how often to fit this in based on your weekly capacity.</p>
               </>
             )}
           </article>
@@ -1293,7 +1276,6 @@ function configsFromRoutines(routines: Routine[]) {
         ...config,
         active: routine.active,
         durationMinutes: routine.durationMinutes ?? config.durationMinutes,
-        frequency: routine.frequency,
         preferredDay: routine.preferredDay,
         preferredTime: routine.preferredTime,
         effort: routine.effort,
@@ -1369,15 +1351,6 @@ function emptyFixedDraft(month: string): FixedDraft {
 
 function durationOptions(values: number[]) {
   return values.map((value) => ({ value, label: value < 60 ? `${value} minutes` : value === 60 ? "1 hour" : `${value / 60} hours` }));
-}
-
-function frequencyLabel(frequency: RoutineFrequency) {
-  if (frequency === "weekly") return "1x weekly";
-  if (frequency === "2x-weekly") return "2x weekly";
-  if (frequency === "3x-weekly") return "3x weekly";
-  if (frequency === "4x-weekly") return "4x weekly";
-  if (frequency === "daily") return "Daily";
-  return "Custom";
 }
 
 function effortFromLabel(label: string): EffortLevel {

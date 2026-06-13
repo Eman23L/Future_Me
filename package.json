@@ -8,6 +8,7 @@
     "dev": "npm run build && node scripts/serve-dist.cjs",
     "build": "npm run compile && vite build",
     "generate:vapid": "node scripts/generate-vapid.cjs",
+    "test:scheduler": "npm run compile && node scripts/scheduler-checks.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "postinstall": "node scripts/patch-vite-windows-realpath.cjs"
   },
