@@ -81,8 +81,10 @@ Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `VAPID_PRIVATE_KEY` in frontend cod
 
 1. Add all environment variables in Vercel project settings.
 2. Deploy the app.
-3. `vercel.json` runs `/api/cron/send-reminders` every 5 minutes.
-4. Set `CRON_SECRET` and make sure cron requests include `Authorization: Bearer <CRON_SECRET>`.
+3. Configure a scheduler to call `/api/cron/send-reminders` every 5 minutes.
+4. Set `CRON_SECRET` and make sure scheduled requests include `Authorization: Bearer <CRON_SECRET>`.
+
+Note: the automatic `vercel.json` cron declaration is intentionally not committed because deployments can fail on Vercel plans/projects where Cron is not enabled. The route exists and can be connected from Vercel Cron later, or from another scheduler.
 
 ### iPhone Setup
 
