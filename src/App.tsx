@@ -546,7 +546,7 @@ export function App() {
     let reminderStage = "Reminder setup";
     try {
       reminderStage = "VAPID public key";
-      const vapidPublicKey = await loadVapidPublicKey();
+      const vapidPublicKey = await getVapidPublicKey();
       console.info("[FutureMe reminders] VAPID public key loaded.");
       reminderStage = "Service worker registration";
       const registration = await navigator.serviceWorker.register("/sw.js");
@@ -1668,15 +1668,18 @@ function getLocalUserId() {
   return userId;
 }
 
-async function loadVapidPublicKey() {
-  if (import.meta.env.VITE_VAPID_PUBLIC_KEY) {
-    return import.meta.env.VITE_VAPID_PUBLIC_KEY;
+async function getVapidPublicKey() {
+  const viteEnv = (import.meta as ImportMeta & { env?: ImportMetaEnv }).env;
+  const viteKey = viteEnv?.VITE_VAPID_PUBLIC_KEY;
+
+  if (viteKey && typeof viteKey === "string") {
+    return viteKey;
   }
 
   const response = await fetch("/api/push/public-key");
-  if (!response.ok) throw new Error("Reminder setup needs the VAPID public key in Vercel first.");
+  if (!response.ok) throw new Error("Unable to load VAPID public key");
   const data = await response.json() as { publicKey?: string };
-  if (!data.publicKey) throw new Error("Reminder setup needs the VAPID public key in Vercel first.");
+  if (!data.publicKey) throw new Error("VAPID public key missing from API response");
   return data.publicKey;
 }
 

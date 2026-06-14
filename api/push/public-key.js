@@ -6,7 +6,7 @@ export default function handler(request, response) {
     return;
   }
 
-  const publicKey = process.env.VITE_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
+  const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
 
   if (!publicKey) {
     sendJson(response, 500, {
