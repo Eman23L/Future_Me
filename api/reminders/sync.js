@@ -1,4 +1,4 @@
-import { allowPostOnly, getRequestBody, getSupabaseAdmin, sendJson } from "../_lib/supabase.js";
+import { allowPostOnly, formatServerError, getRequestBody, getSupabaseAdmin, sendJson } from "../_lib/supabase.js";
 
 export default async function handler(request, response) {
   if (!allowPostOnly(request, response)) return;
@@ -14,22 +14,23 @@ export default async function handler(request, response) {
       return;
     }
 
+    const supabase = getSupabaseAdmin();
+    const now = new Date().toISOString();
     const monthStart = `${monthKey}-01`;
     const [year, month] = monthKey.split("-").map(Number);
     const nextMonthDate = new Date(Date.UTC(year, month, 1));
     const nextMonth = `${nextMonthDate.getUTCFullYear()}-${String(nextMonthDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
-    const supabase = getSupabaseAdmin();
 
-    let deleteQuery = supabase
+    let cancelQuery = supabase
       .from("scheduled_reminders")
-      .delete()
+      .update({ status: "cancelled", updated_at: now })
       .eq("status", "pending")
       .gte("task_date", monthStart)
       .lt("task_date", nextMonth);
 
-    deleteQuery = userId ? deleteQuery.eq("user_id", userId) : deleteQuery.is("user_id", null);
-    const { error: deleteError } = await deleteQuery;
-    if (deleteError) throw deleteError;
+    cancelQuery = userId ? cancelQuery.eq("user_id", userId) : cancelQuery.is("user_id", null);
+    const { error: cancelError } = await cancelQuery;
+    if (cancelError) throw cancelError;
 
     const rows = reminders
       .filter((reminder) => reminder.taskId && reminder.title && reminder.body && reminder.scheduledFor)
@@ -43,16 +44,27 @@ export default async function handler(request, response) {
         notification_vibe: reminder.notificationVibe ?? null,
         task_date: reminder.taskDate ?? null,
         task_category: reminder.taskCategory ?? null,
-        updated_at: new Date().toISOString()
+        updated_at: now
       }));
 
     if (rows.length > 0) {
-      const { error: insertError } = await supabase.from("scheduled_reminders").insert(rows);
-      if (insertError) throw insertError;
+      const { error: upsertError } = await supabase
+        .from("scheduled_reminders")
+        .upsert(rows, { onConflict: "task_id,scheduled_for" });
+      if (upsertError) throw upsertError;
     }
 
-    sendJson(response, 200, { ok: true, count: rows.length });
+    let countQuery = supabase
+      .from("scheduled_reminders")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending");
+
+    countQuery = userId ? countQuery.eq("user_id", userId) : countQuery.is("user_id", null);
+    const { count, error: countError } = await countQuery;
+    if (countError) throw countError;
+
+    sendJson(response, 200, { ok: true, count: rows.length, pendingCount: count ?? 0 });
   } catch (error) {
-    sendJson(response, 500, { error: error instanceof Error ? error.message : "Unable to sync reminders." });
+    sendJson(response, 500, formatServerError(error));
   }
 }

@@ -28,6 +28,11 @@ create table if not exists public.scheduled_reminders (
   constraint scheduled_reminders_status_check check (status in ('pending', 'sent', 'failed', 'cancelled'))
 );
 
+grant usage on schema public to service_role;
+grant select, insert, update, delete on public.scheduled_reminders to service_role;
+
+create unique index if not exists scheduled_reminders_task_time_key on public.scheduled_reminders(task_id, scheduled_for);
+
 create index if not exists push_subscriptions_user_id_idx on public.push_subscriptions(user_id);
 create index if not exists scheduled_reminders_due_idx on public.scheduled_reminders(status, scheduled_for);
 create index if not exists scheduled_reminders_user_month_idx on public.scheduled_reminders(user_id, task_date);

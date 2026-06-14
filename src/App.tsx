@@ -220,6 +220,7 @@ export function App() {
   const [notificationNotice, setNotificationNotice] = useState("");
   const [reminderDebug, setReminderDebug] = useState<ReminderDebugState>(emptyReminderDebug);
   const [showReminderDebug, setShowReminderDebug] = useState(false);
+  const [scheduledReminderCount, setScheduledReminderCount] = useState<number | null>(null);
   const [pushEndpoint, setPushEndpoint] = useState(localStorage.getItem(PUSH_ENDPOINT_KEY) ?? "");
   const stepRef = useRef(step);
   const lastHistoryStep = useRef<FlowStep | null>(null);
@@ -599,7 +600,7 @@ export function App() {
       setNotificationsEnabled(true);
       setNotificationNotice("Reminders are on. FutureMe can now nudge you from your schedule.");
       setReminderDebug((current) => ({ ...current, backendStatus: String(response.status), backendError: "" }));
-      if (state) void syncScheduledReminders(state);
+      if (state) await syncScheduledReminders(state);
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : "Reminder setup did not finish.";
       const message =
@@ -638,6 +639,25 @@ export function App() {
     }
   }
 
+  async function sendDueRemindersNow() {
+    setNotificationNotice("");
+    try {
+      const response = await fetch("/api/reminders/send-due", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: getLocalUserId() })
+      });
+      const responseText = await response.text();
+
+      if (!response.ok) throw new Error(parseBackendError(responseText));
+
+      const result = JSON.parse(responseText) as { checked?: number; sent?: number; failed?: number };
+      setNotificationNotice(`Due reminders checked: ${result.checked ?? 0}. Sent: ${result.sent ?? 0}. Failed: ${result.failed ?? 0}.`);
+    } catch (error) {
+      setNotificationNotice(error instanceof Error ? error.message : "Due reminders could not be sent yet.");
+    }
+  }
+
   function dismissReminderPrompt() {
     setNotificationNotice("No problem. You can enable reminders here later.");
   }
@@ -646,7 +666,7 @@ export function App() {
     if (!nextState.setupComplete) return;
 
     try {
-      await fetch("/api/reminders/sync", {
+      const response = await fetch("/api/reminders/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -655,6 +675,10 @@ export function App() {
           reminders: buildScheduledReminders(nextState)
         })
       });
+      const responseText = await response.text();
+      if (!response.ok) throw new Error(parseBackendError(responseText));
+      const result = JSON.parse(responseText) as { pendingCount?: number; count?: number };
+      setScheduledReminderCount(result.pendingCount ?? result.count ?? null);
     } catch {
       // Reminder sync is best-effort; the local planner should keep working offline.
     }
@@ -709,6 +733,8 @@ export function App() {
         onRequestNotifications={requestNotifications}
         onDismissNotifications={dismissReminderPrompt}
         onTestReminder={sendTestReminder}
+        onSendDueReminders={sendDueRemindersNow}
+        scheduledReminderCount={scheduledReminderCount}
       >
         <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
         <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
@@ -1086,6 +1112,8 @@ function DailyApp({
   onRequestNotifications,
   onDismissNotifications,
   onTestReminder,
+  onSendDueReminders,
+  scheduledReminderCount,
   children
 }: {
   state: PlannerState;
@@ -1108,6 +1136,8 @@ function DailyApp({
   onRequestNotifications: () => void;
   onDismissNotifications: () => void;
   onTestReminder: () => void;
+  onSendDueReminders: () => void;
+  scheduledReminderCount: number | null;
   children?: React.ReactNode;
 }) {
   const tasks = daySchedule(state, visibleDate);
@@ -1128,12 +1158,19 @@ function DailyApp({
         <p className="eyebrow">A note from FutureMe</p>
         <h2>{notificationMessage(state.settings.notificationPersonality, nextTask?.title ?? "your next task", nextTask?.startTime ?? "soon")}</h2>
         <p className="reminder-copy">I can remind you before work, gym, appointments, deadlines and prep tasks.</p>
+        {notificationsEnabled && (
+          <p className="reminder-copy">
+            Reminders are on. FutureMe will nudge you from your schedule.
+            {scheduledReminderCount !== null ? ` ${scheduledReminderCount} scheduled reminders are pending.` : ""}
+          </p>
+        )}
         <div className="reminder-actions">
           <button onClick={onRequestNotifications} disabled={notificationsEnabled && notificationStatus === "granted"}>
             {notificationsEnabled && notificationStatus === "granted" ? "Reminders are on" : "Enable reminders"}
           </button>
           {!notificationsEnabled && <button className="secondary-action" onClick={onDismissNotifications}>Not now</button>}
           {notificationsEnabled && <button className="secondary-action" onClick={onTestReminder}>Send test reminder</button>}
+          {notificationsEnabled && <button className="secondary-action" onClick={onSendDueReminders}>Send due reminders now</button>}
         </div>
         {notificationNotice && <p className="reminder-status">{notificationNotice}</p>}
         {showReminderDebug && <ReminderDebugPanel debug={reminderDebug} />}
@@ -1488,10 +1525,10 @@ function buildScheduledReminders(state: PlannerState): ScheduledReminderPayload[
     .filter((task) => task.sourceType !== "sleep" && !task.completed)
     .forEach((task) => {
       const vibe = state.settings.notificationPersonality;
-      const addReminder = (kind: "evening-before" | "day-before" | "morning-of" | "one-hour" | "at-time", scheduledFor: string) => {
+      const addReminder = (kind: ReminderKind, scheduledFor: string) => {
         if (new Date(scheduledFor).getTime() <= now) return;
         reminders.push({
-          taskId: `${task.id}:${kind}`,
+          taskId: task.id,
           title: "FutureMe reminder",
           body: reminderBody(vibe, task, kind),
           scheduledFor,
@@ -1501,40 +1538,95 @@ function buildScheduledReminders(state: PlannerState): ScheduledReminderPayload[
         });
       };
 
-      if (task.category === "work" || task.category === "gym") {
-        addReminder("evening-before", localDateTimeToIso(offsetDate(task.date, -1), "20:00"));
+      if (task.category === "work") {
+        addReminder("work-evening-before", localDateTimeToIso(offsetDate(task.date, -1), "20:00"));
+        addReminder("work-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
+        return;
+      }
+
+      if (task.category === "appointment") {
+        addReminder("appointment-day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
+        addReminder("appointment-two-hours", addMinutesToLocalDateTime(task.date, task.startTime, -120));
+        return;
       }
 
       if (task.category === "deadline") {
-        addReminder("day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
-        addReminder("morning-of", localDateTimeToIso(task.date, "09:00"));
+        addReminder("deadline-day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
+        if (timeToMinutes(task.startTime) > timeToMinutes("09:00")) {
+          addReminder("deadline-morning-of", localDateTimeToIso(task.date, "09:00"));
+        }
+        return;
       }
 
-      addReminder("one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-
-      if (task.category === "deadline") {
-        addReminder("at-time", localDateTimeToIso(task.date, task.startTime));
+      if (task.category === "gym") {
+        addReminder("gym-evening-before", localDateTimeToIso(offsetDate(task.date, -1), "20:00"));
+        addReminder("gym-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
+        return;
       }
+
+      if (task.category === "self-care") {
+        addReminder("self-care-thirty-minutes", addMinutesToLocalDateTime(task.date, task.startTime, -30));
+        return;
+      }
+
+      if (task.category === "cleaning") addReminder("cleaning-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
+      if (task.category === "meal-prep") addReminder("meal-prep-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
+      if (task.category === "food-shop") addReminder("food-shop-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
+      if (task.sourceType === "prep" && task.category !== "meal-prep") addReminder("prep-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
     });
 
   return reminders;
 }
 
-function reminderBody(personality: NotificationPersonality, task: PlannedTask, kind: "evening-before" | "day-before" | "morning-of" | "one-hour" | "at-time") {
+type ReminderKind =
+  | "work-evening-before"
+  | "work-one-hour"
+  | "appointment-day-before"
+  | "appointment-two-hours"
+  | "deadline-day-before"
+  | "deadline-morning-of"
+  | "gym-evening-before"
+  | "gym-one-hour"
+  | "cleaning-one-hour"
+  | "meal-prep-one-hour"
+  | "food-shop-one-hour"
+  | "self-care-thirty-minutes"
+  | "prep-one-hour";
+
+function reminderBody(personality: NotificationPersonality, task: PlannedTask, kind: ReminderKind) {
   const title = task.title;
 
-  if (kind === "evening-before") {
+  if (kind === "work-evening-before") {
     const messages: Record<NotificationPersonality, string> = {
-      bestie: `Hey girlie pop, ${title} is tomorrow. Set yourself up gently tonight.`,
-      gentle: `Soft reminder, ${title} is tomorrow. Prepare what you need when you can.`,
-      coach: `${title} tomorrow. Prep your essentials tonight and follow the plan.`,
-      professional: `Reminder: ${title} is scheduled tomorrow. Please prepare accordingly.`,
-      chaos: `BESTIE. ${title} is tomorrow. Outfit. Bag. Water. Future you says thanks.`
+      bestie: "Work tomorrow. Uniform, lunch, water bottle — future you says thanks.",
+      gentle: "Gentle reminder: work is tomorrow. Uniform, lunch and water bottle when you can.",
+      coach: "Work tomorrow. Prep uniform, lunch and water bottle tonight.",
+      professional: "Reminder: work is scheduled tomorrow. Please prepare your essentials.",
+      chaos: "BESTIE. Work tomorrow. Uniform. Lunch. Water bottle. Future you says thanks."
     };
     return messages[personality];
   }
 
-  if (kind === "day-before") {
+  if (kind === "work-one-hour") {
+    const messages: Record<NotificationPersonality, string> = {
+      bestie: "Work starts in 1 hour. Time to get ready.",
+      gentle: "Soft reminder: work starts in 1 hour. Start getting ready when you can.",
+      coach: "Work starts in 1 hour. Get ready and follow the plan.",
+      professional: "Reminder: work starts in 1 hour. Please prepare accordingly.",
+      chaos: "WORK IN 1 HOUR. Shoes. Bag. Water. Go mode."
+    };
+    return messages[personality];
+  }
+
+  if (kind === "appointment-day-before") {
+    return vibeLine(personality, `${title} is tomorrow.`, `${title} is tomorrow. Check the time, place and anything you need.`);
+  }
+
+  if (kind === "appointment-two-hours") {
+    return vibeLine(personality, `${title} is in 2 hours.`, `${title} is in 2 hours. Leave yourself enough time to get ready.`);
+  }
+
+  if (kind === "deadline-day-before") {
     const messages: Record<NotificationPersonality, string> = {
       bestie: `Hey girlie pop, ${title} is due tomorrow. Tiny steady steps now.`,
       gentle: `Soft reminder, ${title} is due tomorrow. Give yourself a calm check-in today.`,
@@ -1545,7 +1637,7 @@ function reminderBody(personality: NotificationPersonality, task: PlannedTask, k
     return messages[personality];
   }
 
-  if (kind === "morning-of") {
+  if (kind === "deadline-morning-of") {
     const messages: Record<NotificationPersonality, string> = {
       bestie: `Hey girlie pop, ${title} is today. Let's keep it simple and steady.`,
       gentle: `Soft reminder, ${title} is today. Start with the next kind step.`,
@@ -1556,11 +1648,26 @@ function reminderBody(personality: NotificationPersonality, task: PlannedTask, k
     return messages[personality];
   }
 
-  if (kind === "at-time") {
-    return notificationMessage(personality, title, "now");
-  }
+  if (kind === "gym-evening-before") return vibeLine(personality, "Gym is tomorrow.", "Gym is tomorrow. Put your kit, water and shoes somewhere easy.");
+  if (kind === "gym-one-hour") return notificationMessage(personality, "Gym", "in about an hour");
+  if (kind === "cleaning-one-hour") return vibeLine(personality, "Cleaning is in 1 hour.", "Cleaning is in 1 hour. Keep it simple and start with one reset.");
+  if (kind === "meal-prep-one-hour") return vibeLine(personality, "Meal prep is in 1 hour.", "Meal prep is in 1 hour. Future you will be grateful.");
+  if (kind === "food-shop-one-hour") return vibeLine(personality, "Food shop is in 1 hour.", "Food shop is in 1 hour. Check your list before you go.");
+  if (kind === "self-care-thirty-minutes") return vibeLine(personality, "Self-care is in 30 minutes.", "Self-care is in 30 minutes. Protect the reset.");
+  if (kind === "prep-one-hour") return vibeLine(personality, `${title} is in 1 hour.`, `${title} is in 1 hour. A small prep block now will help later.`);
 
-  return notificationMessage(personality, title, "in about an hour");
+  return notificationMessage(personality, title, "soon");
+}
+
+function vibeLine(personality: NotificationPersonality, shortLine: string, gentleLine: string) {
+  const messages: Record<NotificationPersonality, string> = {
+    bestie: `Hey girlie pop, ${shortLine} You've got this.`,
+    gentle: `Soft reminder: ${gentleLine}`,
+    coach: `${shortLine} Get ready and follow the plan.`,
+    professional: `Reminder: ${shortLine}`,
+    chaos: `BESTIE. ${shortLine} Do the thing.`
+  };
+  return messages[personality];
 }
 
 function localDateTimeToIso(date: string, time: string) {
@@ -1617,6 +1724,11 @@ function addMinutes(time: string, minutes: number) {
   const [hours, mins] = time.split(":").map(Number);
   const total = (hours * 60 + mins + minutes + 1440) % 1440;
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function timeToMinutes(time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
 }
 
 function offsetDate(date: string, offset: number) {
