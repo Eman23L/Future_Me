@@ -107,7 +107,16 @@ function migrate(state: PlannerState): PlannerState {
     state.monthlyInputs.some((input) => DEMO_INPUT_IDS.has(input.id)) ||
     state.routines.some((routine) => DEMO_ROUTINE_IDS.has(routine.id)) ||
     state.rules.custom === DEMO_CUSTOM_RULE;
-  const monthlyInputs = state.monthlyInputs.filter((input) => !DEMO_INPUT_IDS.has(input.id));
+  const monthlyInputs = state.monthlyInputs
+    .filter((input) => !DEMO_INPUT_IDS.has(input.id))
+    .map((input) => {
+      const oldFakeTime = input.startTime === "23:59";
+      if (!oldFakeTime) return input;
+      if (input.category === "social") return { ...input, startTime: "18:00", endTime: "20:00", timeWasDefaulted: true, notes: appendNote(input.notes, "Time estimated") };
+      if (input.category === "appointment") return { ...input, startTime: "12:00", endTime: input.endTime ?? "13:00", timeWasDefaulted: true, notes: appendNote(input.notes, "Time estimated") };
+      if (input.category === "deadline") return { ...input, startTime: "09:00", endTime: "09:30", timeWasDefaulted: true, notes: appendNote(input.notes, "Due time not set.") };
+      return input;
+    });
   const routines = state.routines.filter((routine) => !DEMO_ROUTINE_IDS.has(routine.id));
   const plannedTasks = state.plannedTasks
     .filter((task) => {
@@ -117,6 +126,8 @@ function migrate(state: PlannerState): PlannerState {
     })
     .map((task) => ({
       ...task,
+      ...(task.startTime === "23:59" && task.category === "social" ? { startTime: "18:00", endTime: "20:00", timeWasDefaulted: true } : {}),
+      ...(task.startTime === "23:59" && task.category === "deadline" ? { startTime: "09:00", endTime: "09:30", timeWasDefaulted: true } : {}),
       lock: task.lock ?? (task.sourceType === "fixed" || task.sourceType === "sleep" ? "fixed" : "flexible"),
       priority: task.priority ?? (task.sourceType === "fixed" || task.sourceType === "sleep" ? "essential" : "medium")
     }));
@@ -138,6 +149,10 @@ function migrate(state: PlannerState): PlannerState {
     setupComplete: state.setupComplete ?? false,
     explanations: state.explanations ?? []
   };
+}
+
+function appendNote(notes: string | undefined, note: string) {
+  return notes?.includes(note) ? notes : [notes, note].filter(Boolean).join(" - ");
 }
 
 function currentMonthKey() {

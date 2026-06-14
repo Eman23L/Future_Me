@@ -39,6 +39,7 @@ export interface MonthlyInput {
   fixed?: boolean;
   effort?: EffortLevel;
   priority?: PlanningPriority;
+  timeWasDefaulted?: boolean;
 }
 
 export type RoutineFrequency =
@@ -91,6 +92,7 @@ export interface FixedEvent {
   priority: PlanningPriority;
   lock: "fixed";
   notes?: string;
+  timeWasDefaulted?: boolean;
 }
 
 export interface FlexibleTask {
@@ -147,6 +149,7 @@ export interface PlannedTask {
   lock: PlanningLock;
   priority: PlanningPriority;
   explanation?: string;
+  timeWasDefaulted?: boolean;
   completed: boolean;
   missed: boolean;
 }

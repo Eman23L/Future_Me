@@ -399,30 +399,39 @@ export function App() {
 
   function saveFixedEvent(category: "appointment" | "social" | "deadline") {
     if (!state || !fixedDraft.title.trim() || !fixedDraft.date) return;
+    const timeWasDefaulted = !fixedDraft.startTime;
+    const fallbackStart = category === "social" ? "18:00" : category === "appointment" ? "12:00" : "09:00";
+    const startTime = fixedDraft.startTime || fallbackStart;
+    const endTime =
+      category === "social" && timeWasDefaulted
+        ? "20:00"
+        : fixedDraft.endTime || addMinutes(startTime, category === "deadline" ? 30 : 60);
     const input: MonthlyInput = category === "deadline"
       ? {
         id: crypto.randomUUID(),
         title: fixedDraft.title,
         date: fixedDraft.date,
-        startTime: fixedDraft.startTime,
-        endTime: addMinutes(fixedDraft.startTime, 30),
+        startTime,
+        endTime: addMinutes(startTime, 30),
         category,
         fixed: true,
         effort: effortFromLabel(fixedDraft.effort),
         priority: "essential",
-        notes: `${fixedDraft.importance} importance. ${fixedDraft.effort} effort. ${fixedDraft.notes}`.trim()
+        notes: `${fixedDraft.importance} importance. ${fixedDraft.effort} effort. ${timeWasDefaulted ? "Due time not set." : ""} ${fixedDraft.notes}`.trim(),
+        timeWasDefaulted
       }
       : {
         id: crypto.randomUUID(),
         title: fixedDraft.title,
         date: fixedDraft.date,
-        startTime: fixedDraft.startTime,
-        endTime: fixedDraft.endTime || addMinutes(fixedDraft.startTime, 60),
+        startTime,
+        endTime,
         category,
         fixed: true,
         effort: category === "appointment" ? "medium" : "low",
         priority: "essential",
-        notes: [fixedDraft.location, fixedDraft.notes].filter(Boolean).join(" - ")
+        notes: [fixedDraft.location, timeWasDefaulted ? "Time estimated" : "", fixedDraft.notes].filter(Boolean).join(" - "),
+        timeWasDefaulted
       };
     update({ ...state, monthlyInputs: [...state.monthlyInputs, input] });
     setFixedDraft(emptyFixedDraft(state.plannedMonth));
@@ -1141,6 +1150,7 @@ function DailyApp({
   children?: React.ReactNode;
 }) {
   const tasks = daySchedule(state, visibleDate);
+  const dueToday = dueTodayItems(state, visibleDate);
   const nextTask = tasks.find((task) => !task.completed && task.sourceType !== "sleep");
   return (
     <main className="mobile-shell dashboard">
@@ -1176,6 +1186,22 @@ function DailyApp({
         {showReminderDebug && <ReminderDebugPanel debug={reminderDebug} />}
       </section>
 
+      {dueToday.length > 0 && (
+        <section className="task-section due-section">
+          <div className="section-title">
+            <h2>Due today</h2>
+            <span>{dueToday.length} item{dueToday.length === 1 ? "" : "s"}</span>
+          </div>
+          {dueToday.map((task) => (
+            <article key={task.id} className="due-row">
+              <strong>{task.title}</strong>
+              <small>Due today - Set by you</small>
+              {task.notes && <span>{task.notes.replace("Due time not set.", "").trim()}</span>}
+            </article>
+          ))}
+        </section>
+      )}
+
       <section className="day-nav">
         <button onClick={() => onDateChange(offsetDate(visibleDate, -1))} aria-label="Previous day">&lt;</button>
         <div>
@@ -1197,10 +1223,11 @@ function DailyApp({
             <div className={`dot ${task.category}`} />
             <div>
               <strong>{task.title}</strong>
-              <span>{task.startTime} - {task.endTime}</span>
-              <small>{task.lock === "fixed" ? "Set by you" : "Placed by FutureMe"} - {categoryLabels[task.category]}</small>
+              <span>{scheduleTimeText(task)}</span>
+              <small>{scheduleSourceLabel(task)} - {displayCategoryLabel(task)}</small>
+              {task.timeWasDefaulted && <small>Time estimated</small>}
             </div>
-            {task.sourceType !== "sleep" && <button onClick={() => onComplete(task)} disabled={task.completed}>{task.completed ? "Done" : "Complete"}</button>}
+            {isCompletableTask(task) && <button onClick={() => onComplete(task)} disabled={task.completed}>{task.completed ? "Done" : "Complete"}</button>}
           </article>
         ))}
       </section>
@@ -1439,8 +1466,25 @@ function statusForCategory(state: PlannerState, category: Category) {
 function daySchedule(state: PlannerState, date: string) {
   const visible = state.plannedTasks
     .filter((task) => task.date === date && task.sourceType !== "sleep")
+    .filter((task) => !(task.category === "deadline" && task.timeWasDefaulted))
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
   return [
+    {
+      id: `wake-${date}`,
+      sourceId: `sleep-${date}`,
+      sourceType: "sleep" as const,
+      title: "Wake up",
+      date,
+      startTime: state.settings.wakeTime,
+      endTime: state.settings.wakeTime,
+      category: "self-care" as Category,
+      notes: "Start the day gently",
+      effort: "low" as EffortLevel,
+      lock: "fixed" as const,
+      priority: "essential" as const,
+      completed: false,
+      missed: false
+    },
     ...visible,
     {
       id: `bedtime-${date}`,
@@ -1451,6 +1495,7 @@ function daySchedule(state: PlannerState, date: string) {
       startTime: state.settings.bedTime,
       endTime: state.settings.bedTime,
       category: "self-care" as Category,
+      notes: "Wind down for the night",
       effort: "low" as EffortLevel,
       lock: "fixed" as const,
       priority: "essential" as const,
@@ -1460,16 +1505,45 @@ function daySchedule(state: PlannerState, date: string) {
   ].sort((a, b) => a.startTime.localeCompare(b.startTime));
 }
 
+function dueTodayItems(state: PlannerState, date: string) {
+  return state.plannedTasks
+    .filter((task) => task.date === date && task.category === "deadline" && task.timeWasDefaulted)
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
 function tasksForCalendarDay(state: PlannerState, date: string) {
   return state.plannedTasks
     .filter((task) => task.date === date && task.sourceType !== "sleep")
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 }
 
+function scheduleTimeText(task: PlannedTask) {
+  if (task.sourceType === "sleep") return task.notes ?? (task.title === "Bedtime" ? "Wind down for the night" : "Daily anchor");
+  if (task.category === "deadline" && task.timeWasDefaulted) return "Due today";
+  return `${task.startTime} - ${task.endTime}`;
+}
+
+function scheduleSourceLabel(task: PlannedTask) {
+  if (task.sourceType === "sleep") return "Daily anchor";
+  if (task.category === "deadline" && task.timeWasDefaulted) return "Due today";
+  return task.lock === "fixed" ? "Set by you" : "Placed by FutureMe";
+}
+
+function displayCategoryLabel(task: PlannedTask) {
+  if (task.sourceType === "sleep") return task.title === "Bedtime" ? "Sleep" : "Daily anchor";
+  return categoryLabels[task.category];
+}
+
+function isCompletableTask(task: PlannedTask) {
+  if (task.sourceType === "sleep") return false;
+  if (task.category === "deadline" || task.category === "appointment" || task.category === "social") return false;
+  return task.sourceType === "routine" || task.sourceType === "prep" || task.category === "study" || task.category === "work";
+}
+
 function emptyFixedDraft(month: string): FixedDraft {
   return {
     title: "",
-    startTime: "10:00",
+    startTime: "",
     endTime: "",
     location: "",
     notes: "",
@@ -1550,10 +1624,25 @@ function buildScheduledReminders(state: PlannerState): ScheduledReminderPayload[
         return;
       }
 
+      if (task.category === "social") {
+        if (task.timeWasDefaulted) {
+          addReminder("social-untimed-morning", localDateTimeToIso(task.date, "10:00"));
+        } else {
+          addReminder("social-morning-of", localDateTimeToIso(task.date, "10:00"));
+          addReminder("social-two-hours", addMinutesToLocalDateTime(task.date, task.startTime, -120));
+        }
+        return;
+      }
+
       if (task.category === "deadline") {
-        addReminder("deadline-day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
-        if (timeToMinutes(task.startTime) > timeToMinutes("09:00")) {
+        if (task.timeWasDefaulted) {
+          addReminder("deadline-untimed-day-before", localDateTimeToIso(offsetDate(task.date, -1), "18:00"));
           addReminder("deadline-morning-of", localDateTimeToIso(task.date, "09:00"));
+        } else {
+          addReminder("deadline-day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
+          if (timeToMinutes(task.startTime) > timeToMinutes("09:00")) {
+            addReminder("deadline-morning-of", localDateTimeToIso(task.date, "09:00"));
+          }
         }
         return;
       }
@@ -1583,7 +1672,11 @@ type ReminderKind =
   | "work-one-hour"
   | "appointment-day-before"
   | "appointment-two-hours"
+  | "social-morning-of"
+  | "social-two-hours"
+  | "social-untimed-morning"
   | "deadline-day-before"
+  | "deadline-untimed-day-before"
   | "deadline-morning-of"
   | "gym-evening-before"
   | "gym-one-hour"
@@ -1626,6 +1719,18 @@ function reminderBody(personality: NotificationPersonality, task: PlannedTask, k
     return vibeLine(personality, `${title} is in 2 hours.`, `${title} is in 2 hours. Leave yourself enough time to get ready.`);
   }
 
+  if (kind === "social-morning-of") {
+    return vibeLine(personality, `${title} is today.`, `${title} is today. Check plans and give yourself space to get ready.`);
+  }
+
+  if (kind === "social-two-hours") {
+    return vibeLine(personality, `${title} is in 2 hours.`, `${title} is in 2 hours. Time to start easing into it.`);
+  }
+
+  if (kind === "social-untimed-morning") {
+    return vibeLine(personality, `${title} is today.`, `${title} is today. The time was not set, so check the plan when you can.`);
+  }
+
   if (kind === "deadline-day-before") {
     const messages: Record<NotificationPersonality, string> = {
       bestie: `Hey girlie pop, ${title} is due tomorrow. Tiny steady steps now.`,
@@ -1635,6 +1740,10 @@ function reminderBody(personality: NotificationPersonality, task: PlannedTask, k
       chaos: `BESTIE. ${title} is tomorrow. Open the thing. Finish the thing.`
     };
     return messages[personality];
+  }
+
+  if (kind === "deadline-untimed-day-before") {
+    return vibeLine(personality, `${title} is due tomorrow.`, `${title} is due tomorrow. No due time was set, so give it some attention today.`);
   }
 
   if (kind === "deadline-morning-of") {

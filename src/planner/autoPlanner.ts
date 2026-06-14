@@ -119,17 +119,33 @@ function buildFixedEvents(state: PlannerState, monthCursor: Date, days: number):
 }
 
 function toFixedEvent(input: MonthlyInput): FixedEvent {
+  const oldFakeTime = input.startTime === "23:59";
+  const timeWasDefaulted = input.timeWasDefaulted || oldFakeTime;
+  const startTime =
+    input.category === "social" && timeWasDefaulted
+      ? "18:00"
+      : input.category === "appointment" && timeWasDefaulted
+        ? "12:00"
+        : input.category === "deadline" && timeWasDefaulted
+          ? "09:00"
+          : input.startTime;
+  const endTime =
+    input.category === "social" && timeWasDefaulted
+      ? "20:00"
+      : input.endTime ?? addMinutes(startTime, 60);
+
   return {
     id: input.id,
     title: input.title,
     date: input.date,
-    startTime: input.startTime,
-    endTime: input.endTime ?? addMinutes(input.startTime, 60),
+    startTime,
+    endTime,
     category: input.category,
     notes: input.notes,
     effort: input.effort ?? (input.category === "work" || input.category === "deadline" ? "high" : "medium"),
     priority: input.priority ?? "essential",
-    lock: "fixed"
+    lock: "fixed",
+    timeWasDefaulted
   };
 }
 
@@ -168,6 +184,7 @@ function toLockedTask(event: FixedEvent): PlannedTask {
     lock: "fixed",
     priority: event.priority,
     explanation: "Fixed commitment locked during monthly setup.",
+    timeWasDefaulted: event.timeWasDefaulted,
     completed: false,
     missed: false
   };

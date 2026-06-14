@@ -12,6 +12,14 @@ for (const capacity of capacities) {
   const state = createState(capacity);
   const plan = generateMonthlyPlan(state);
   const weekTasks = plan.tasks.filter((task) => task.date >= "2026-06-01" && task.date <= "2026-06-07" && task.sourceType === "routine");
+  const birthday = plan.tasks.find((task) => task.sourceId === "social-untimed");
+  const oldSocial = plan.tasks.find((task) => task.sourceId === "social-old-fake");
+  const untimedDeadline = plan.tasks.find((task) => task.id === "fixed-deadline-untimed");
+
+  assert(!plan.tasks.some((task) => task.startTime === "23:59"), `${capacity}: generated plan should not contain fake 23:59 times`);
+  assert(birthday?.startTime === "18:00" && birthday?.endTime === "20:00" && birthday?.timeWasDefaulted, `${capacity}: untimed social event should default to estimated evening`);
+  assert(oldSocial?.startTime === "18:00" && oldSocial?.endTime === "20:00" && oldSocial?.timeWasDefaulted, `${capacity}: old fake social time should migrate to estimated evening`);
+  assert(untimedDeadline?.startTime === "09:00" && untimedDeadline?.timeWasDefaulted, `${capacity}: untimed deadline should become due-today anchor`);
 
   for (const [category, count] of Object.entries(expected[capacity])) {
     assert(
@@ -49,7 +57,10 @@ function createState(capacity) {
       fixed("work-1", "Work shift", "2026-06-08", "07:30", "20:30", "work"),
       fixed("appointment-1", "Doctor", "2026-06-10", "14:00", "15:00", "appointment"),
       fixed("deadline-1", "Assignment due", "2026-06-12", "10:00", "10:30", "deadline"),
-      fixed("social-1", "Dinner", "2026-06-13", "18:00", "20:00", "social")
+      fixed("social-1", "Dinner", "2026-06-13", "18:00", "20:00", "social"),
+      fixed("social-untimed", "Birthday", "2026-06-14", "18:00", "20:00", "social", true),
+      fixed("social-old-fake", "Old birthday", "2026-06-15", "23:59", "00:59", "social"),
+      fixed("deadline-untimed", "Untimed assignment", "2026-06-16", "09:00", "09:30", "deadline", true)
     ],
     routines: [
       routine("routine-gym", "Gym routine", "gym", "high", 60, "09:00"),
@@ -71,7 +82,7 @@ function createState(capacity) {
   };
 }
 
-function fixed(id, title, date, startTime, endTime, category) {
+function fixed(id, title, date, startTime, endTime, category, timeWasDefaulted = false) {
   return {
     id,
     title,
@@ -81,7 +92,8 @@ function fixed(id, title, date, startTime, endTime, category) {
     category,
     fixed: true,
     effort: category === "work" || category === "deadline" ? "high" : "medium",
-    priority: "essential"
+    priority: "essential",
+    timeWasDefaulted
   };
 }
 
