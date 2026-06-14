@@ -61,15 +61,16 @@ Frontend-safe:
 ```bash
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
-VAPID_PUBLIC_KEY=
+VITE_VAPID_PUBLIC_KEY=
 ```
 
-`VAPID_PUBLIC_KEY` is returned to the browser by `/api/push/public-key`; the private VAPID key is never exposed.
+`VITE_VAPID_PUBLIC_KEY` is used by the browser for PushManager subscription. The app can also fall back to `/api/push/public-key`, which returns the server `VAPID_PUBLIC_KEY` safely. The private VAPID key is never exposed.
 
 Server-only:
 
 ```bash
 SUPABASE_SERVICE_ROLE_KEY=
+VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
 VAPID_SUBJECT=mailto:your-email@example.com
 CRON_SECRET=

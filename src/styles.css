@@ -941,6 +941,21 @@ label {
   font-weight: 800;
 }
 
+.reminder-debug {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(143, 63, 93, 0.22);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.64);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .reminder-actions {
   display: grid;
   gap: 10px;

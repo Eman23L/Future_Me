@@ -6,10 +6,15 @@ export default function handler(request, response) {
     return;
   }
 
-  if (!process.env.VAPID_PUBLIC_KEY) {
-    sendJson(response, 500, { error: "Missing VAPID public key." });
+  const publicKey = process.env.VITE_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
+
+  if (!publicKey) {
+    sendJson(response, 500, {
+      error: "VAPID env missing",
+      details: "Missing VITE_VAPID_PUBLIC_KEY or VAPID_PUBLIC_KEY."
+    });
     return;
   }
 
-  sendJson(response, 200, { publicKey: process.env.VAPID_PUBLIC_KEY });
+  sendJson(response, 200, { publicKey });
 }

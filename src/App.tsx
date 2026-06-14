@@ -35,6 +35,14 @@ type ScheduledReminderPayload = {
   taskCategory: Category;
 };
 
+type ReminderDebugState = {
+  permission: NotificationPermission | "unsupported" | "unknown";
+  serviceWorkerReady: boolean;
+  pushSubscriptionCreated: boolean;
+  backendStatus: string;
+  backendError: string;
+};
+
 type FlowStep =
   | "start"
   | "loading"
@@ -94,6 +102,13 @@ const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const USER_ID_KEY = "future-me:user-id";
 const NOTIFICATIONS_ENABLED_KEY = "future-me:notifications-enabled";
 const PUSH_ENDPOINT_KEY = "future-me:push-endpoint";
+const emptyReminderDebug: ReminderDebugState = {
+  permission: "unknown",
+  serviceWorkerReady: false,
+  pushSubscriptionCreated: false,
+  backendStatus: "",
+  backendError: ""
+};
 
 const capacities: Array<{ id: CapacityMode; title: string; detail: string }> = [
   { id: "high", title: "I have plenty in me", detail: "Plan a fuller week." },
@@ -203,6 +218,8 @@ export function App() {
   );
   const [notificationsEnabled, setNotificationsEnabled] = useState(localStorage.getItem(NOTIFICATIONS_ENABLED_KEY) === "true");
   const [notificationNotice, setNotificationNotice] = useState("");
+  const [reminderDebug, setReminderDebug] = useState<ReminderDebugState>(emptyReminderDebug);
+  const [showReminderDebug, setShowReminderDebug] = useState(false);
   const [pushEndpoint, setPushEndpoint] = useState(localStorage.getItem(PUSH_ENDPOINT_KEY) ?? "");
   const stepRef = useRef(step);
   const lastHistoryStep = useRef<FlowStep | null>(null);
@@ -492,36 +509,64 @@ export function App() {
 
   async function requestNotifications() {
     setNotificationNotice("");
+    setShowReminderDebug(false);
+    setReminderDebug(emptyReminderDebug);
 
     if (isIosSafari() && !isStandaloneMode()) {
+      const nextDebug = { ...emptyReminderDebug, backendError: "iPhone Home Screen install required." };
+      console.info("[FutureMe reminders] iOS Safari is not standalone.", nextDebug);
+      setReminderDebug(nextDebug);
+      setShowReminderDebug(true);
       setShowReminderInstructions(true);
       return;
     }
 
     if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      const nextDebug = { ...emptyReminderDebug, permission: "unsupported" as const, backendError: "Notification, service worker, or PushManager is not supported." };
+      console.info("[FutureMe reminders] Browser support check failed.", nextDebug);
+      setReminderDebug(nextDebug);
+      setShowReminderDebug(true);
       setNotificationStatus("unsupported");
       setShowReminderInstructions(true);
       return;
     }
 
     const permission = await Notification.requestPermission();
+    console.info("[FutureMe reminders] Notification permission:", permission);
     setNotificationStatus(permission);
+    setReminderDebug((current) => ({ ...current, permission }));
 
     if (permission !== "granted") {
-      setNotificationNotice("Notifications are not enabled yet. You can try again from here.");
+      setReminderDebug({ ...emptyReminderDebug, permission, backendError: "Permission denied" });
+      setShowReminderDebug(true);
+      setNotificationNotice("Permission denied. Notifications are not enabled yet.");
       return;
     }
 
+    let reminderStage = "Reminder setup";
     try {
+      reminderStage = "VAPID public key";
       const vapidPublicKey = await loadVapidPublicKey();
+      console.info("[FutureMe reminders] VAPID public key loaded.");
+      reminderStage = "Service worker registration";
       const registration = await navigator.serviceWorker.register("/sw.js");
+      console.info("[FutureMe reminders] Service worker registration succeeded.", registration.scope);
       const readyRegistration = await navigator.serviceWorker.ready.then((ready) => ready ?? registration);
+      setReminderDebug((current) => ({ ...current, serviceWorkerReady: true }));
+      console.info("[FutureMe reminders] Service worker ready.");
+      reminderStage = "Push subscription";
       const existingSubscription = await readyRegistration.pushManager.getSubscription();
       const subscription = existingSubscription ?? await readyRegistration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
       });
+      setReminderDebug((current) => ({ ...current, pushSubscriptionCreated: true }));
+      console.info("[FutureMe reminders] Push subscription ready.", {
+        reused: Boolean(existingSubscription),
+        endpoint: subscription.endpoint
+      });
 
+      reminderStage = "Backend save";
       const response = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -531,17 +576,46 @@ export function App() {
           subscription: subscription.toJSON()
         })
       });
+      const responseText = await response.text();
+      console.info("[FutureMe reminders] Subscription save response.", {
+        status: response.status,
+        body: responseText
+      });
 
-      if (!response.ok) throw new Error("Unable to save reminder subscription.");
+      if (!response.ok) {
+        const backendError = parseBackendError(responseText);
+        setReminderDebug((current) => ({
+          ...current,
+          backendStatus: String(response.status),
+          backendError
+        }));
+        setShowReminderDebug(true);
+        throw new Error(`Backend save failed: ${backendError || response.status}`);
+      }
 
       localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, "true");
       localStorage.setItem(PUSH_ENDPOINT_KEY, subscription.endpoint);
       setPushEndpoint(subscription.endpoint);
       setNotificationsEnabled(true);
       setNotificationNotice("Reminders are on. FutureMe can now nudge you from your schedule.");
+      setReminderDebug((current) => ({ ...current, backendStatus: String(response.status), backendError: "" }));
       if (state) void syncScheduledReminders(state);
     } catch (error) {
-      setNotificationNotice(error instanceof Error ? error.message : "Reminder setup did not finish.");
+      const rawMessage = error instanceof Error ? error.message : "Reminder setup did not finish.";
+      const message =
+        rawMessage.startsWith("Backend save failed")
+          ? rawMessage
+          : reminderStage === "Service worker registration"
+            ? `Service worker registration failed: ${rawMessage}`
+            : reminderStage === "Push subscription"
+              ? `Push subscription failed: ${rawMessage}`
+              : reminderStage === "VAPID public key"
+                ? `VAPID public key failed: ${rawMessage}`
+                : rawMessage;
+      console.error("[FutureMe reminders] Reminder setup failed.", error);
+      setReminderDebug((current) => ({ ...current, backendError: current.backendError || message }));
+      setShowReminderDebug(true);
+      setNotificationNotice(message);
     }
   }
 
@@ -623,6 +697,8 @@ export function App() {
         notificationStatus={notificationStatus}
         notificationsEnabled={notificationsEnabled}
         notificationNotice={notificationNotice}
+        reminderDebug={reminderDebug}
+        showReminderDebug={showReminderDebug}
         onDateChange={setSelectedDate}
         onToday={() => setSelectedDate(null)}
         onBack={() => setStep("month")}
@@ -998,6 +1074,8 @@ function DailyApp({
   notificationStatus,
   notificationsEnabled,
   notificationNotice,
+  reminderDebug,
+  showReminderDebug,
   onDateChange,
   onToday,
   onBack,
@@ -1018,6 +1096,8 @@ function DailyApp({
   notificationStatus: NotificationPermission | "unsupported";
   notificationsEnabled: boolean;
   notificationNotice: string;
+  reminderDebug: ReminderDebugState;
+  showReminderDebug: boolean;
   onDateChange: (date: string) => void;
   onToday: () => void;
   onBack: () => void;
@@ -1056,6 +1136,7 @@ function DailyApp({
           {notificationsEnabled && <button className="secondary-action" onClick={onTestReminder}>Send test reminder</button>}
         </div>
         {notificationNotice && <p className="reminder-status">{notificationNotice}</p>}
+        {showReminderDebug && <ReminderDebugPanel debug={reminderDebug} />}
       </section>
 
       <section className="day-nav">
@@ -1236,6 +1317,18 @@ function StandaloneDebugLine() {
     <p className="standalone-debug">
       standalone: {String(standalone)} | navigator.standalone: {String(navigatorStandalone)} | display-mode standalone: {String(displayModeStandalone)}
     </p>
+  );
+}
+
+function ReminderDebugPanel({ debug }: { debug: ReminderDebugState }) {
+  return (
+    <div className="reminder-debug" role="status">
+      <span>permission: {debug.permission}</span>
+      <span>serviceWorkerReady: {String(debug.serviceWorkerReady)}</span>
+      <span>pushSubscriptionCreated: {String(debug.pushSubscriptionCreated)}</span>
+      <span>backendStatus: {debug.backendStatus || "n/a"}</span>
+      <span>backendError: {debug.backendError || "n/a"}</span>
+    </div>
   );
 }
 
@@ -1576,11 +1669,25 @@ function getLocalUserId() {
 }
 
 async function loadVapidPublicKey() {
+  if (import.meta.env.VITE_VAPID_PUBLIC_KEY) {
+    return import.meta.env.VITE_VAPID_PUBLIC_KEY;
+  }
+
   const response = await fetch("/api/push/public-key");
   if (!response.ok) throw new Error("Reminder setup needs the VAPID public key in Vercel first.");
   const data = await response.json() as { publicKey?: string };
   if (!data.publicKey) throw new Error("Reminder setup needs the VAPID public key in Vercel first.");
   return data.publicKey;
+}
+
+function parseBackendError(responseText: string) {
+  if (!responseText) return "Backend save failed with an empty response.";
+  try {
+    const parsed = JSON.parse(responseText) as { error?: string; code?: string; details?: string; hint?: string };
+    return [parsed.error, parsed.code, parsed.details, parsed.hint].filter(Boolean).join(" - ") || responseText;
+  } catch {
+    return responseText;
+  }
 }
 
 function urlBase64ToUint8Array(value: string) {
