@@ -57,7 +57,7 @@ export function formatServerError(error) {
   const details = error?.details;
   const hint = error?.hint;
 
-  if (code === "42P01" || /relation .* does not exist/i.test(message)) {
+  if (code === "42P01" || code === "PGRST205" || /relation .* does not exist/i.test(message)) {
     return {
       error: "Supabase table missing",
       code,
