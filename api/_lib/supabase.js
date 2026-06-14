@@ -61,7 +61,7 @@ export function formatServerError(error) {
     return {
       error: "Supabase table missing",
       code,
-      details: details || "Run supabase.sql and make sure public.push_subscriptions exists.",
+      details: details || "Run supabase.sql and make sure public.push_subscriptions and public.scheduled_reminders exist.",
       hint
     };
   }
