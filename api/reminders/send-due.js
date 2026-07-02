@@ -4,17 +4,25 @@ import { getWebPush, toPushSubscription } from "../_lib/webPush.js";
 export default async function handler(request, response) {
   if (!allowPostOnly(request, response)) return;
 
+  if (!isAllowedCronRequest(request)) {
+    sendJson(response, 401, { error: "Unauthorized" });
+    return;
+  }
+
   try {
     const body = await getRequestBody(request);
     const userId = body.userId ?? null;
     const supabase = getSupabaseAdmin();
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const windowStart = new Date(nowDate.getTime() - 15 * 60 * 1000).toISOString();
+    const now = nowDate.toISOString();
 
     let reminderQuery = supabase
       .from("scheduled_reminders")
       .select("*")
       .eq("status", "pending")
       .lte("scheduled_for", now)
+      .gte("scheduled_for", windowStart)
       .order("scheduled_for", { ascending: true })
       .limit(100);
 
@@ -78,4 +86,11 @@ export default async function handler(request, response) {
   } catch (error) {
     sendJson(response, 500, formatServerError(error));
   }
+}
+
+function isAllowedCronRequest(request) {
+  if (process.env.VERCEL_ENV !== "production") return true;
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  return request.headers.authorization === `Bearer ${secret}`;
 }

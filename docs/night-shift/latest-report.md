@@ -2,48 +2,49 @@
 
 ## Date
 
-Initial report created for FutureMe loop engineering setup.
+Updated after notification accountability loop work.
 
 ## Repo State
 
-FutureMe has a working mobile-first PWA architecture with Vite, React, service worker support, Vercel API routes, Supabase reminder storage, and Web Push infrastructure.
+FutureMe has a working mobile-first PWA architecture with Vite, React, service worker support, Vercel API routes, Supabase reminder storage, Web Push infrastructure, account-scoped identity support, and a first deterministic What's Next engine.
 
 ## Build Status
 
-Not run at report creation time. Run `npm run build` during night-shift review.
+Latest local build passed during this loop.
 
 ## Test Status
 
-Not run at report creation time. Run `npm run test:scheduler` during night-shift review.
+Run `npm run test:scheduler` before closing the loop.
 
 ## Recent Changes
 
-- Push notifications now work.
-- Scheduled reminders exist.
-- Test reminder works.
-- Pending reminders exist.
-- PWA install and iPhone standalone support exist.
+- Notifications are documented as a core V1 accountability feature.
+- Reminder generation is centralized in `src/services/whatsNext.ts`.
+- Dashboard reminder copy uses the What's Next state.
+- Completion triggers reminder resync so completed tasks stop producing future pending reminders.
+- Manual send-due/test controls are debug/dev only.
+- `POST /api/reminders/send-due` is protected by `CRON_SECRET` in production.
+- Reminder sync cancels stale pending reminders instead of cancelling every pending month reminder before upsert.
 
 ## Bugs Noticed
 
-- Need cron automation for due reminders.
-- Need debug buttons hidden from normal users.
-- Need What’s Next Engine.
+- Production scheduler still needs to be configured for due reminders.
+- Need focused What's Next/reminder-generation tests.
 - Need missed/overdue task handling.
 - Need schedule quality cleanup.
 - Need daily display cleanup.
 
 ## Docs That Need Updating
 
-Update docs when reminder automation, What’s Next logic, schema changes, or schedule rules change.
+Update docs when production cron is configured, What’s Next tests are added, schema changes, or missed-task rules change.
 
-## What’s Next Logic Review
+## What's Next Logic Review
 
-The What’s Next Engine is now documented as the core product logic, but it is not built yet.
+The first deterministic What's Next engine exists in `src/services/whatsNext.ts` and powers reminder/dashboard copy. It still needs deeper missed-task and reschedule rules.
 
 ## Notification Logic Review
 
-Notifications are optional nudges. They should be generated from schedule and What’s Next state and should never control task state.
+Notifications are a core V1 accountability feature. They are generated from schedule/What's Next task state and must never replace completion/task state.
 
 ## Schedule Quality Review
 
@@ -51,11 +52,11 @@ Current scheduler has capacity-based routine placement and checks. More work is 
 
 ## Suggested Next Loop
 
-Automate due reminder sending.
+Configure production scheduler and add What's Next/reminder tests.
 
 ## Suggested Codex Prompt
 
-Use `docs/codex/codex-loop-prompt.md` with the goal: "Automate due reminder sending without changing UI style or making notifications the source of truth."
+Use `docs/codex/codex-loop-prompt.md` with the goal: "Configure production due-reminder scheduling and add focused tests for What's Next reminder generation."
 
 ## Risk Level
 

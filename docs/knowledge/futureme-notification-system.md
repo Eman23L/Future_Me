@@ -2,11 +2,21 @@
 
 ## Product Role
 
-Notifications are optional nudges. Notifications are not the product.
+Notifications are a core Version 1 feature of FutureMe. They are the accountability and nudge layer that brings the user back to the plan at the right moment.
 
-The app must work if notifications are disabled. The daily dashboard and What’s Next Engine are the source of truth.
+FutureMe is not just a notification app, and notifications must not replace task state. The generated schedule, task completion state, current time, capacity, rules, and What's Next logic remain the source of truth.
 
-Push notifications should be generated from schedule state and What’s Next state. Notifications should never directly control task state.
+Correct V1 flow:
+
+1. Task exists.
+2. FutureMe knows what is next.
+3. Notification nudges the user.
+4. Task remains active.
+5. User opens app.
+6. User marks complete.
+7. Planner updates.
+
+The daily dashboard must still work if notifications are disabled.
 
 ## iPhone PWA Requirements
 
@@ -22,9 +32,11 @@ Push notifications should be generated from schedule state and What’s Next sta
 - Frontend subscribes through PushManager.
 - `/api/push/subscribe` stores the subscription in Supabase.
 - Schedule generation syncs planned reminders through `/api/reminders/sync`.
-- Test reminder verifies delivery.
-- Due reminders can be sent through the due reminder endpoint.
-- Production cron route exists for automatic sending.
+- Test reminder verifies delivery in debug/dev mode.
+- Due reminders can be sent through protected `POST /api/reminders/send-due`.
+- Production cron setup should call the due reminder endpoint with `Authorization: Bearer <CRON_SECRET>`.
+- Normal users do not see manual send-due controls; debug controls are local/dev only.
+- Completion resyncs reminders so completed tasks no longer generate future pending reminders.
 
 ## Supabase Tables
 
@@ -49,7 +61,7 @@ Server:
 
 ## Current Work Needed
 
-- Automate due reminder sending with a scheduled backend job.
-- Hide debug reminder buttons from normal users.
-- Ensure reminder state follows schedule and What’s Next state.
-- Keep the app useful when reminders are disabled.
+- Configure Supabase cron/pg_net, Vercel Cron, or another scheduler to call `/api/reminders/send-due` every 5 minutes.
+- Add focused tests for reminder generation and completed-task cancellation.
+- Keep testing iPhone Home Screen push behavior after deploys.
+- Improve missed/overdue task handling beyond basic active/overdue classification.

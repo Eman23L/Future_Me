@@ -22,27 +22,27 @@
 - Priority: Medium.
 - Next suggested action: Keep guidance, but avoid changing UI until requested.
 
-## Reminder Cron Not Automated Yet
+## Production Reminder Scheduler Not Configured
 
-- Status: Open.
+- Status: Partially fixed.
 - Area: Backend reminders.
-- Description: Due reminder sending needs production automation.
-- Steps to reproduce: Create scheduled reminders and wait without invoking cron.
+- Description: The protected due reminder endpoint exists, but production scheduler setup still needs to be configured.
+- Steps to reproduce: Create scheduled reminders and wait without a scheduler calling the endpoint.
 - Expected behaviour: Due reminders are sent automatically.
-- Current behaviour: Manual/debug sending may still be needed.
+- Current behaviour: Endpoint is ready, but external cron setup is still required.
 - Priority: High.
-- Next suggested action: Wire Supabase cron/pg_net, Vercel Cron, or protected scheduler to `api/cron/send-reminders.js`.
+- Next suggested action: Wire Supabase cron/pg_net, Vercel Cron, or protected scheduler to `POST /api/reminders/send-due` with `Authorization: Bearer <CRON_SECRET>`.
 
-## Debug Reminder Buttons Still Visible To Normal Users
+## Debug Reminder Buttons Visible To Normal Users
 
-- Status: Open.
+- Status: Fixed in app code.
 - Area: UI/admin controls.
 - Description: Test/debug reminder actions are useful for development but should not be normal-user controls.
-- Steps to reproduce: Open reminders UI as a normal user.
+- Steps to reproduce: Open reminders UI as a normal production user.
 - Expected behaviour: Admin/debug controls hidden or gated.
-- Current behaviour: Debug controls may still be visible.
-- Priority: High.
-- Next suggested action: Hide behind admin/dev state without changing visual style.
+- Current behaviour: Debug controls are hidden unless running in dev or `localStorage.futuremeDebug = "true"`.
+- Priority: Low.
+- Next suggested action: Verify production build on device.
 
 ## Schedule Quality Improvements Needed
 
@@ -77,16 +77,16 @@
 - Priority: Low.
 - Next suggested action: Run mobile screenshot review before UI work.
 
-## What’s Next Engine Not Built Yet
+## What's Next Engine Needs Tests And Deeper Rules
 
-- Status: Open.
+- Status: Partially fixed.
 - Area: Product logic.
-- Description: Current app has daily dashboard and task state but not a central What’s Next Engine.
-- Steps to reproduce: Inspect logic for currentTask/nextTask decision service.
-- Expected behaviour: One deterministic engine powers dashboard and nudges.
-- Current behaviour: Logic is not centralized yet.
+- Description: A first deterministic engine exists, but missed-task decisions, rescheduling suggestions, and overload handling need deeper rules/tests.
+- Steps to reproduce: Inspect `src/services/whatsNext.ts`.
+- Expected behaviour: One deterministic engine powers dashboard and nudges with test coverage.
+- Current behaviour: Engine powers dashboard/reminder copy, but logic needs dedicated tests and richer task decisions.
 - Priority: High.
-- Next suggested action: Build `getWhatsNext` behind existing UI.
+- Next suggested action: Add focused What's Next tests and overdue/reschedule product rules.
 
 ## Missed/Overdue Task Behaviour Not Finalised
 
@@ -95,9 +95,9 @@
 - Description: Missed tasks need clear rules for active, overdue, rolled forward, softened, or completed.
 - Steps to reproduce: Let flexible tasks pass without completion.
 - Expected behaviour: FutureMe gives a gentle next action.
-- Current behaviour: Behaviour needs product definition and implementation.
+- Current behaviour: Behaviour needs product definition and implementation beyond basic missed flags.
 - Priority: High.
-- Next suggested action: Define rules in What’s Next loop before changing scheduling.
+- Next suggested action: Define rules in What's Next loop before changing scheduling.
 
 ## Weekly Capacity Loop Not Fully Automated
 

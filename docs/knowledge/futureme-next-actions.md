@@ -1,16 +1,15 @@
 # FutureMe Next Actions
 
-1. Automate due reminder sending with Supabase cron/pg_net or protected endpoint.
-2. Hide debug reminder buttons from normal users.
-3. Build What’s Next Engine.
-4. Improve missed/overdue task handling.
-5. Improve daily schedule display.
-6. Improve schedule quality.
-7. Add weekly capacity loop.
-8. Add edit/reschedule task flow.
-9. Add AI chat later.
-10. Add research-backed planning rules later.
-11. Add auth/user accounts later if needed.
+1. Configure production scheduler for `POST /api/reminders/send-due` with `CRON_SECRET`.
+2. Add focused What's Next/reminder-generation tests.
+3. Improve missed/overdue task handling.
+4. Improve daily schedule display.
+5. Improve schedule quality.
+6. Add weekly capacity loop.
+7. Add edit/reschedule task flow.
+8. Add AI chat later.
+9. Add research-backed planning rules later.
+10. Add auth/user accounts later if needed.
 
 ## Auth/Identity Follow-Up
 
@@ -18,6 +17,6 @@ Account-scoped local storage and auth-based reminder ownership now exist as infr
 
 ## Current Recommended Active Loop
 
-Automate due reminder sending.
+Make notifications work from the next upcoming task/activity.
 
-The goal is to turn reminder sending from manual/debug button into an automatic backend job while keeping notifications as optional nudges.
+The goal is to keep notifications as a core V1 accountability feature while ensuring every reminder is generated from real task state and the dashboard remains useful without notifications.

@@ -1,10 +1,10 @@
-# FutureMe What’s Next Engine
+# FutureMe What's Next Engine
 
 ## Purpose
 
-The What’s Next Engine is the central product logic that determines what the user should focus on now.
+The What's Next Engine is the central product logic that determines what the user should focus on now.
 
-It is more important than notifications. Notifications are just nudges from the What’s Next system. The daily dashboard is the primary user experience.
+Notifications are a core V1 feature, but they are generated from task state and must not replace task state. The What's Next Engine powers both the daily dashboard and the notification/accountability layer.
 
 ## Inputs
 
@@ -30,16 +30,19 @@ It is more important than notifications. Notifications are just nudges from the 
 - `overdueTasks`.
 - `completedTasks`.
 - `activeTasks`.
-- `recommendedAction`.
-- `suggestedReschedules`.
 - `shouldNotify`.
 - `notificationReason`.
-- `dashboardMessage`.
+- `notificationTiming`.
+- `notificationBody`.
+- `targetUrl`.
+- `targetDate`.
 
 ## Product Rules
 
 - The dashboard should work without notifications.
-- Notifications should be triggered from What’s Next, not the other way around.
+- Notifications should be triggered from What's Next/task state, not the other way around.
+- If a notification is sent, the task must remain active until completed.
+- Completed tasks should not continue to send future reminders.
 - If a task is missed, the engine should decide whether it stays active, rolls forward, or is softened.
 - If the user is in a softer week, the engine should reduce pressure.
 - If a task is fixed, do not move it automatically.
@@ -48,19 +51,12 @@ It is more important than notifications. Notifications are just nudges from the 
 - If nothing urgent exists, the engine should show a calming next step or recovery message.
 - Notifications should never directly change completion, overdue, or reschedule state.
 
-## Future Implementation Shape
+## Current Implementation Shape
 
-Create a central service/function:
+`src/services/whatsNext.ts` contains a deterministic first version:
 
 ```ts
-getWhatsNext({
-  schedule,
-  now,
-  completionState,
-  capacity,
-  rules,
-  notificationSettings
-})
+getWhatsNext(state, now)
 ```
 
 Returns:
@@ -72,14 +68,18 @@ Returns:
   upcomingTasks,
   overdueTasks,
   completedTasks,
-  recommendedAction,
+  activeTasks,
   shouldNotify,
   notificationReason,
-  rescheduleSuggestions,
-  dashboardMessage
+  notificationTiming,
+  notificationBody,
+  targetUrl,
+  targetDate
 }
 ```
 
+The same module builds scheduled reminder payloads from incomplete planned tasks and selected notification personality.
+
 ## Implementation Notes
 
-The first implementation should be deterministic and testable. AI can help later, but the core state transitions should be clear code with scheduler tests. Build the logic behind the existing UI first.
+The first implementation is deterministic and uses current planner state. Future loops should add focused tests and deepen missed-task decisions, reschedule suggestions, and overload handling.

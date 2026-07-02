@@ -3,6 +3,7 @@ import { LocalPlannerRepository } from "./data/LocalPlannerRepository";
 import { createSeedState } from "./data/seed";
 import { PlannerService } from "./services/PlannerService";
 import { getBrowserSupabase, identityFromSession, resolveInitialAccount, type AccountIdentity } from "./services/auth";
+import { buildScheduledReminders, getWhatsNext, notificationMessage, type WhatsNextState } from "./services/whatsNext";
 import type {
   CapacityMode,
   Category,
@@ -23,16 +24,6 @@ type BeforeInstallPromptEvent = Event & {
 type InstallControls = {
   isStandalone: boolean;
   onInstall: () => void;
-};
-
-type ScheduledReminderPayload = {
-  taskId: string;
-  title: string;
-  body: string;
-  scheduledFor: string;
-  notificationVibe: NotificationPersonality;
-  taskDate: string;
-  taskCategory: Category;
 };
 
 type ReminderDebugState = {
@@ -556,7 +547,14 @@ export function App() {
 
   async function patchTask(taskId: string, patch: Partial<PlannedTask>) {
     if (!state) return;
-    setState(await service.updateTask(state, taskId, patch));
+    const next = await service.updateTask(state, taskId, patch);
+    setState(next);
+    return next;
+  }
+
+  async function completeTask(task: PlannedTask) {
+    const next = await patchTask(task.id, { completed: true, missed: false });
+    if (next) void syncScheduledReminders(next);
   }
 
   async function requestNotifications() {
@@ -691,6 +689,7 @@ export function App() {
   }
 
   async function sendDueRemindersNow() {
+    if (!isReminderDebugEnabled()) return;
     setNotificationNotice("");
     try {
       const response = await fetch("/api/reminders/send-due", {
@@ -762,6 +761,7 @@ export function App() {
   const visibleDate = selectedDate ?? realToday;
 
   if (state.setupComplete && step === "review") {
+    const whatsNext = getWhatsNext(state);
     return (
       <DailyApp
         state={state}
@@ -780,12 +780,14 @@ export function App() {
         onHome={goHome}
         onPlan={() => setStep("calendar")}
         onWeeklyCheck={() => setStep("capacity")}
-        onComplete={(task) => patchTask(task.id, { completed: true, missed: false })}
+        onComplete={completeTask}
         onRequestNotifications={requestNotifications}
         onDismissNotifications={dismissReminderPrompt}
         onTestReminder={sendTestReminder}
         onSendDueReminders={sendDueRemindersNow}
         scheduledReminderCount={scheduledReminderCount}
+        whatsNext={whatsNext}
+        reminderDebugEnabled={isReminderDebugEnabled()}
       >
         <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
         <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
@@ -1165,6 +1167,8 @@ function DailyApp({
   onTestReminder,
   onSendDueReminders,
   scheduledReminderCount,
+  whatsNext,
+  reminderDebugEnabled,
   children
 }: {
   state: PlannerState;
@@ -1189,11 +1193,13 @@ function DailyApp({
   onTestReminder: () => void;
   onSendDueReminders: () => void;
   scheduledReminderCount: number | null;
+  whatsNext: WhatsNextState;
+  reminderDebugEnabled: boolean;
   children?: React.ReactNode;
 }) {
   const tasks = daySchedule(state, visibleDate);
   const dueToday = dueTodayItems(state, visibleDate);
-  const nextTask = tasks.find((task) => !task.completed && task.sourceType !== "sleep");
+  const nextTask = whatsNext.nextTask;
   return (
     <main className="mobile-shell dashboard">
       <header className="dashboard-top">
@@ -1208,8 +1214,10 @@ function DailyApp({
 
       <section className="today-card">
         <p className="eyebrow">A note from FutureMe</p>
-        <h2>{notificationMessage(state.settings.notificationPersonality, nextTask?.title ?? "your next task", nextTask?.startTime ?? "soon")}</h2>
-        <p className="reminder-copy">I can remind you before work, gym, appointments, deadlines and prep tasks.</p>
+        <h2>{whatsNext.notificationBody}</h2>
+        <p className="reminder-copy">
+          {nextTask ? `${nextTask.title} stays active until you mark it complete.` : "Your plan stays here even when notifications are off."}
+        </p>
         {notificationsEnabled && (
           <p className="reminder-copy">
             Reminders are on. FutureMe will nudge you from your schedule.
@@ -1221,8 +1229,8 @@ function DailyApp({
             {notificationsEnabled && notificationStatus === "granted" ? "Reminders are on" : "Enable reminders"}
           </button>
           {!notificationsEnabled && <button className="secondary-action" onClick={onDismissNotifications}>Not now</button>}
-          {notificationsEnabled && <button className="secondary-action" onClick={onTestReminder}>Send test reminder</button>}
-          {notificationsEnabled && <button className="secondary-action" onClick={onSendDueReminders}>Send due reminders now</button>}
+          {notificationsEnabled && reminderDebugEnabled && <button className="secondary-action" onClick={onTestReminder}>Send test reminder</button>}
+          {notificationsEnabled && reminderDebugEnabled && <button className="secondary-action" onClick={onSendDueReminders}>Send due reminders now</button>}
         </div>
         {notificationNotice && <p className="reminder-status">{notificationNotice}</p>}
         {showReminderDebug && <ReminderDebugPanel debug={reminderDebug} />}
@@ -1621,94 +1629,6 @@ function previousStep(step: FlowStep): FlowStep {
   return "start";
 }
 
-function notificationMessage(personality: NotificationPersonality, title: string, time: string) {
-  const when = time === "soon" || time === "now" || time.startsWith("in ") ? time : `at ${time}`;
-  const messages: Record<NotificationPersonality, string> = {
-    bestie: `Hey girlie pop, ${title} is ${when}. Let's get ready.`,
-    gentle: `Soft reminder, ${title} is coming up ${when}. Start getting ready when you can.`,
-    coach: `${title} ${when}. Get your kit ready and follow the plan.`,
-    professional: `Reminder: ${title} is scheduled ${when}. Please prepare accordingly.`,
-    chaos: `BESTIE. ${title} is ${when}. Shoes. Water. Go mode.`
-  };
-  return messages[personality];
-}
-
-function buildScheduledReminders(state: PlannerState): ScheduledReminderPayload[] {
-  const now = Date.now();
-  const reminders: ScheduledReminderPayload[] = [];
-
-  state.plannedTasks
-    .filter((task) => task.sourceType !== "sleep" && !task.completed)
-    .forEach((task) => {
-      const vibe = state.settings.notificationPersonality;
-      const addReminder = (kind: ReminderKind, scheduledFor: string) => {
-        if (new Date(scheduledFor).getTime() <= now) return;
-        reminders.push({
-          taskId: task.id,
-          title: "FutureMe reminder",
-          body: reminderBody(vibe, task, kind),
-          scheduledFor,
-          notificationVibe: vibe,
-          taskDate: task.date,
-          taskCategory: task.category
-        });
-      };
-
-      if (task.category === "work") {
-        addReminder("work-evening-before", localDateTimeToIso(offsetDate(task.date, -1), "20:00"));
-        addReminder("work-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-        return;
-      }
-
-      if (task.category === "appointment") {
-        addReminder("appointment-day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
-        addReminder("appointment-two-hours", addMinutesToLocalDateTime(task.date, task.startTime, -120));
-        return;
-      }
-
-      if (task.category === "social") {
-        if (task.timeWasDefaulted) {
-          addReminder("social-untimed-morning", localDateTimeToIso(task.date, "10:00"));
-        } else {
-          addReminder("social-morning-of", localDateTimeToIso(task.date, "10:00"));
-          addReminder("social-two-hours", addMinutesToLocalDateTime(task.date, task.startTime, -120));
-        }
-        return;
-      }
-
-      if (task.category === "deadline") {
-        if (task.timeWasDefaulted) {
-          addReminder("deadline-untimed-day-before", localDateTimeToIso(offsetDate(task.date, -1), "18:00"));
-          addReminder("deadline-morning-of", localDateTimeToIso(task.date, "09:00"));
-        } else {
-          addReminder("deadline-day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
-          if (timeToMinutes(task.startTime) > timeToMinutes("09:00")) {
-            addReminder("deadline-morning-of", localDateTimeToIso(task.date, "09:00"));
-          }
-        }
-        return;
-      }
-
-      if (task.category === "gym") {
-        addReminder("gym-evening-before", localDateTimeToIso(offsetDate(task.date, -1), "20:00"));
-        addReminder("gym-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-        return;
-      }
-
-      if (task.category === "self-care") {
-        addReminder("self-care-thirty-minutes", addMinutesToLocalDateTime(task.date, task.startTime, -30));
-        return;
-      }
-
-      if (task.category === "cleaning") addReminder("cleaning-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-      if (task.category === "meal-prep") addReminder("meal-prep-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-      if (task.category === "food-shop") addReminder("food-shop-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-      if (task.sourceType === "prep" && task.category !== "meal-prep") addReminder("prep-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-    });
-
-  return reminders;
-}
-
 type ReminderKind =
   | "work-evening-before"
   | "work-one-hour"
@@ -1921,6 +1841,10 @@ function isIosSafari() {
   const isIos = /iPad|iPhone|iPod/.test(ua) || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
   const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|Chrome|Android/.test(ua);
   return isIos && isSafari;
+}
+
+function isReminderDebugEnabled() {
+  return import.meta.env.DEV || localStorage.getItem("futuremeDebug") === "true";
 }
 
 function getLocalUserId() {

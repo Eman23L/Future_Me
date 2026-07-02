@@ -21,17 +21,6 @@ export default async function handler(request, response) {
     const nextMonthDate = new Date(Date.UTC(year, month, 1));
     const nextMonth = `${nextMonthDate.getUTCFullYear()}-${String(nextMonthDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
 
-    let cancelQuery = supabase
-      .from("scheduled_reminders")
-      .update({ status: "cancelled", updated_at: now })
-      .eq("status", "pending")
-      .gte("task_date", monthStart)
-      .lt("task_date", nextMonth);
-
-    cancelQuery = userId ? cancelQuery.eq("user_id", userId) : cancelQuery.is("user_id", null);
-    const { error: cancelError } = await cancelQuery;
-    if (cancelError) throw cancelError;
-
     const rows = reminders
       .filter((reminder) => reminder.taskId && reminder.title && reminder.body && reminder.scheduledFor)
       .map((reminder) => ({
@@ -46,6 +35,30 @@ export default async function handler(request, response) {
         task_category: reminder.taskCategory ?? null,
         updated_at: now
       }));
+    const activeReminderKeys = new Set(rows.map((row) => `${row.task_id}|${row.scheduled_for}`));
+
+    let existingQuery = supabase
+      .from("scheduled_reminders")
+      .select("id, task_id, scheduled_for")
+      .eq("status", "pending")
+      .gte("task_date", monthStart)
+      .lt("task_date", nextMonth);
+
+    existingQuery = userId ? existingQuery.eq("user_id", userId) : existingQuery.is("user_id", null);
+    const { data: existingReminders, error: existingError } = await existingQuery;
+    if (existingError) throw existingError;
+
+    const staleIds = (existingReminders ?? [])
+      .filter((reminder) => !activeReminderKeys.has(`${reminder.task_id}|${reminder.scheduled_for}`))
+      .map((reminder) => reminder.id);
+
+    if (staleIds.length > 0) {
+      const { error: cancelError } = await supabase
+        .from("scheduled_reminders")
+        .update({ status: "cancelled", updated_at: now })
+        .in("id", staleIds);
+      if (cancelError) throw cancelError;
+    }
 
     if (rows.length > 0) {
       const { error: upsertError } = await supabase
