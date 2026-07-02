@@ -20,6 +20,8 @@
 - Vercel deployment.
 - Custom domain with Cloudflare DNS.
 - Approved soft wellness UI style.
+- Account-scoped local storage support exists when a Supabase auth identity is present.
+- Signed-out/local mode remains supported and should continue using the existing local storage flow.
 
 ## Current Technical Shape
 
@@ -29,6 +31,7 @@
 - API routes: Vercel-style functions under `api/`.
 - Push reminders: Web Push and VAPID with Supabase persistence.
 - Cron endpoint: `api/cron/send-reminders.js`, protected by `CRON_SECRET` in production.
+- Auth identity: browser Supabase auth can provide an account `user_id` for reminder ownership, but auth is not the main user experience yet.
 
 ## What Still Needs Work
 

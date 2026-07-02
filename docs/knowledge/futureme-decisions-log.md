@@ -15,6 +15,9 @@
 - Treat notifications as nudges, not the main product.
 - Treat What’s Next Engine as the core product logic.
 - Preserve current UI style unless explicitly changed.
+- Support account-scoped planner storage when a Supabase auth identity exists.
+- Keep signed-out/local mode supported while auth remains an optional infrastructure layer.
+- Use auth identity for reminder ownership when signed in, without making auth the primary user experience yet.
 
 ## Decision Principles
 

@@ -2,6 +2,8 @@
 
 ## Current Tables
 
+`user_id` is currently nullable so signed-out/local mode can remain supported. When a Supabase auth session exists, FutureMe may use the account user id for push subscription and scheduled reminder ownership.
+
 ### `push_subscriptions`
 
 - `id`.
@@ -82,3 +84,5 @@ Do not implement these yet. They are planning notes:
 - `missed_task_actions`.
 
 Future tables should support What’s Next logic, completion persistence, rescheduling history, missed task decisions, and account/device strategy.
+
+Auth is not the main FutureMe user experience yet. Any future account tables should preserve the ability for the app to work in signed-out/local mode unless a deliberate product decision changes that.

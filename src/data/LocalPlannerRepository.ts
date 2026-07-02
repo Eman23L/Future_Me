@@ -30,22 +30,24 @@ const DEMO_RULE_IDS = new Set([
 const DEMO_CUSTOM_RULE = "Keep Wednesday evenings light when possible.";
 
 export class LocalPlannerRepository implements PlannerRepository {
+  constructor(private storageNamespace = "") {}
+
   async load(monthKey = currentMonthKey()): Promise<PlannerState | null> {
-    const plans = loadPlans();
+    const plans = loadPlans(this.storageNamespace);
     if (plans[monthKey]) {
       const state = migrate(plans[monthKey]);
       await this.save(state);
       return state;
     }
 
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(this.storageKey(STORAGE_KEY));
     if (raw) {
       const state = migrate(JSON.parse(raw) as PlannerState);
       await this.save(state);
       return state.plannedMonth === monthKey ? state : null;
     }
 
-    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    const legacy = localStorage.getItem(this.storageKey(LEGACY_STORAGE_KEY));
     if (!legacy) return null;
 
     const state = migrate(JSON.parse(legacy) as PlannerState);
@@ -54,23 +56,27 @@ export class LocalPlannerRepository implements PlannerRepository {
   }
 
   async save(state: PlannerState): Promise<void> {
-    const plans = loadPlans();
+    const plans = loadPlans(this.storageNamespace);
     plans[state.plannedMonth] = state;
-    localStorage.setItem(MONTHLY_STORAGE_KEY, JSON.stringify(plans));
-    localStorage.setItem(DAILY_TASK_STORAGE_KEY, JSON.stringify(mergeTasksByDate(state)));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(this.storageKey(MONTHLY_STORAGE_KEY), JSON.stringify(plans));
+    localStorage.setItem(this.storageKey(DAILY_TASK_STORAGE_KEY), JSON.stringify(mergeTasksByDate(state, this.storageNamespace)));
+    localStorage.setItem(this.storageKey(STORAGE_KEY), JSON.stringify(state));
   }
 
   async clear(): Promise<void> {
-    localStorage.removeItem(MONTHLY_STORAGE_KEY);
-    localStorage.removeItem(DAILY_TASK_STORAGE_KEY);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    localStorage.removeItem(this.storageKey(MONTHLY_STORAGE_KEY));
+    localStorage.removeItem(this.storageKey(DAILY_TASK_STORAGE_KEY));
+    localStorage.removeItem(this.storageKey(STORAGE_KEY));
+    localStorage.removeItem(this.storageKey(LEGACY_STORAGE_KEY));
+  }
+
+  private storageKey(baseKey: string) {
+    return this.storageNamespace ? `${this.storageNamespace}:${baseKey}` : baseKey;
   }
 }
 
-function mergeTasksByDate(state: PlannerState) {
-  const existing = loadDailyTasks();
+function mergeTasksByDate(state: PlannerState, storageNamespace = "") {
+  const existing = loadDailyTasks(storageNamespace);
   Object.keys(existing)
     .filter((date) => date.startsWith(state.plannedMonth))
     .forEach((date) => delete existing[date]);
@@ -81,8 +87,8 @@ function mergeTasksByDate(state: PlannerState) {
   }, existing);
 }
 
-function loadDailyTasks(): Record<string, PlannerState["plannedTasks"]> {
-  const raw = localStorage.getItem(DAILY_TASK_STORAGE_KEY);
+function loadDailyTasks(storageNamespace = ""): Record<string, PlannerState["plannedTasks"]> {
+  const raw = localStorage.getItem(storageKey(DAILY_TASK_STORAGE_KEY, storageNamespace));
   if (!raw) return {};
   try {
     return JSON.parse(raw) as Record<string, PlannerState["plannedTasks"]>;
@@ -91,14 +97,18 @@ function loadDailyTasks(): Record<string, PlannerState["plannedTasks"]> {
   }
 }
 
-function loadPlans(): Record<string, PlannerState> {
-  const raw = localStorage.getItem(MONTHLY_STORAGE_KEY);
+function loadPlans(storageNamespace = ""): Record<string, PlannerState> {
+  const raw = localStorage.getItem(storageKey(MONTHLY_STORAGE_KEY, storageNamespace));
   if (!raw) return {};
   try {
     return JSON.parse(raw) as Record<string, PlannerState>;
   } catch {
     return {};
   }
+}
+
+function storageKey(baseKey: string, storageNamespace = "") {
+  return storageNamespace ? `${storageNamespace}:${baseKey}` : baseKey;
 }
 
 function migrate(state: PlannerState): PlannerState {

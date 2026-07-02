@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { LocalPlannerRepository } from "./data/LocalPlannerRepository";
 import { createSeedState } from "./data/seed";
 import { PlannerService } from "./services/PlannerService";
+import { getBrowserSupabase, identityFromSession, resolveInitialAccount, type AccountIdentity } from "./services/auth";
 import type {
   CapacityMode,
   Category,
@@ -12,8 +14,6 @@ import type {
   Routine
 } from "./models/types";
 import { categoryLabels } from "./models/types";
-
-const service = new PlannerService();
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -201,6 +201,8 @@ const defaultFlexibleConfigs: FlexibleConfig[] = [
 ];
 
 export function App() {
+  const [authReady, setAuthReady] = useState(false);
+  const [accountIdentity, setAccountIdentity] = useState<AccountIdentity | null>(null);
   const [state, setState] = useState<PlannerState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState<FlowStep>("start");
@@ -224,8 +226,44 @@ export function App() {
   const [pushEndpoint, setPushEndpoint] = useState(localStorage.getItem(PUSH_ENDPOINT_KEY) ?? "");
   const stepRef = useRef(step);
   const lastHistoryStep = useRef<FlowStep | null>(null);
+  const storageNamespace = accountIdentity ? `future-me:account:${accountIdentity.userId}` : "";
+  const service = useMemo(
+    () => new PlannerService(new LocalPlannerRepository(storageNamespace)),
+    [storageNamespace]
+  );
 
   useEffect(() => {
+    const supabase = getBrowserSupabase();
+    let mounted = true;
+
+    resolveInitialAccount()
+      .then((identity) => {
+        if (!mounted) return;
+        setAccountIdentity(identity);
+        setAuthReady(true);
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        setLoadError(error instanceof Error ? error.message : "Unable to verify sign-in link.");
+        setAuthReady(true);
+      });
+
+    const authSubscription = supabase?.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setAccountIdentity(identityFromSession(session));
+      setState(null);
+      setSelectedDate(null);
+    }).data.subscription;
+
+    return () => {
+      mounted = false;
+      authSubscription?.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+
     const today = isoToday();
     const monthKey = today.slice(0, 7);
     const requestedDate = new URLSearchParams(window.location.search).get("date");
@@ -240,7 +278,7 @@ export function App() {
         setState(withPlan);
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : "Unable to load planner data."));
-  }, []);
+  }, [authReady, service]);
 
   useEffect(() => {
     stepRef.current = step;
@@ -316,6 +354,10 @@ export function App() {
   async function update(next: PlannerState) {
     setState(next);
     await service.save(next);
+  }
+
+  function getActiveUserId() {
+    return accountIdentity?.userId ?? getLocalUserId();
   }
 
   async function handleDateRollover(today: string) {
@@ -581,7 +623,7 @@ export function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: getLocalUserId(),
+          userId: getActiveUserId(),
           userAgent: navigator.userAgent,
           subscription: subscription.toJSON()
         })
@@ -636,7 +678,7 @@ export function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: getLocalUserId(),
+          userId: getActiveUserId(),
           endpoint: pushEndpoint || localStorage.getItem(PUSH_ENDPOINT_KEY)
         })
       });
@@ -654,7 +696,7 @@ export function App() {
       const response = await fetch("/api/reminders/send-due", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: getLocalUserId() })
+        body: JSON.stringify({ userId: getActiveUserId() })
       });
       const responseText = await response.text();
 
@@ -679,7 +721,7 @@ export function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: getLocalUserId(),
+          userId: getActiveUserId(),
           monthKey: nextState.plannedMonth,
           reminders: buildScheduledReminders(nextState)
         })

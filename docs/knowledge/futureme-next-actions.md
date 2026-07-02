@@ -12,6 +12,10 @@
 10. Add research-backed planning rules later.
 11. Add auth/user accounts later if needed.
 
+## Auth/Identity Follow-Up
+
+Account-scoped local storage and auth-based reminder ownership now exist as infrastructure. Before making auth a user-facing feature, validate magic-link flows, signed-out fallback, reminder ownership, and how local/device data should move if a user later signs in.
+
 ## Current Recommended Active Loop
 
 Automate due reminder sending.
