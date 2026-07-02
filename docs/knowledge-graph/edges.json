@@ -1,0 +1,152 @@
+[
+  {
+    "from": "futureme",
+    "to": "monthly-setup",
+    "relationship": "contains",
+    "description": "FutureMe contains the monthly setup flow."
+  },
+  {
+    "from": "monthly-setup",
+    "to": "fixed-commitments",
+    "relationship": "creates",
+    "description": "Monthly setup captures fixed commitments."
+  },
+  {
+    "from": "fixed-commitments",
+    "to": "scheduling-engine",
+    "relationship": "feeds",
+    "description": "Fixed commitments feed the scheduling engine as anchors."
+  },
+  {
+    "from": "capacity-check",
+    "to": "scheduling-engine",
+    "relationship": "influences",
+    "description": "Capacity changes routine frequency and schedule pressure."
+  },
+  {
+    "from": "capacity-check",
+    "to": "whats-next-engine",
+    "relationship": "influences",
+    "description": "Capacity affects recommendations and whether the plan should soften."
+  },
+  {
+    "from": "scheduling-engine",
+    "to": "active-task",
+    "relationship": "creates task candidates",
+    "description": "Generated schedule produces tasks that may become active."
+  },
+  {
+    "from": "rules-engine",
+    "to": "scheduling-engine",
+    "relationship": "constrains",
+    "description": "Rules engine constrains where tasks can be placed."
+  },
+  {
+    "from": "completion-system",
+    "to": "completed-task",
+    "relationship": "updates",
+    "description": "Completion system marks tasks as completed."
+  },
+  {
+    "from": "completion-system",
+    "to": "whats-next-engine",
+    "relationship": "feeds",
+    "description": "Completion state tells What’s Next which tasks no longer need attention."
+  },
+  {
+    "from": "whats-next-engine",
+    "to": "active-task",
+    "relationship": "selects",
+    "description": "What’s Next decides which task currently needs attention."
+  },
+  {
+    "from": "whats-next-engine",
+    "to": "upcoming-task",
+    "relationship": "selects",
+    "description": "What’s Next identifies upcoming tasks."
+  },
+  {
+    "from": "whats-next-engine",
+    "to": "overdue-task",
+    "relationship": "classifies",
+    "description": "What’s Next classifies missed or overdue tasks."
+  },
+  {
+    "from": "whats-next-engine",
+    "to": "daily-dashboard",
+    "relationship": "powers",
+    "description": "What’s Next powers the daily dashboard."
+  },
+  {
+    "from": "whats-next-engine",
+    "to": "notification-nudge",
+    "relationship": "may trigger",
+    "description": "What’s Next may trigger optional notification nudges."
+  },
+  {
+    "from": "notification-nudge",
+    "to": "push-notifications",
+    "relationship": "uses",
+    "description": "Notification nudges use Web Push delivery when enabled."
+  },
+  {
+    "from": "push-notifications",
+    "to": "service-worker",
+    "relationship": "uses",
+    "description": "Push notifications require the service worker."
+  },
+  {
+    "from": "push-subscriptions",
+    "to": "supabase",
+    "relationship": "stored in",
+    "description": "Push subscriptions are stored in Supabase."
+  },
+  {
+    "from": "scheduled-reminders",
+    "to": "supabase",
+    "relationship": "stored in",
+    "description": "Scheduled reminders are stored in Supabase."
+  },
+  {
+    "from": "scheduled-reminders",
+    "to": "notification-nudge",
+    "relationship": "may create",
+    "description": "Due scheduled reminders may create notification nudges."
+  },
+  {
+    "from": "notification-nudge",
+    "to": "completion-system",
+    "relationship": "does not control",
+    "description": "Notifications do not control app state or completion state."
+  },
+  {
+    "from": "daily-dashboard",
+    "to": "futureme",
+    "relationship": "primary experience of",
+    "description": "The daily dashboard is the primary user experience."
+  },
+  {
+    "from": "night-shift-workflow",
+    "to": "loop-engineering",
+    "relationship": "suggests",
+    "description": "Night shift suggests the next focused loop."
+  },
+  {
+    "from": "night-shift-workflow",
+    "to": "whats-next-engine",
+    "relationship": "reviews",
+    "description": "Night shift reviews whether What’s Next logic is clear."
+  },
+  {
+    "from": "night-shift-workflow",
+    "to": "notification-nudge",
+    "relationship": "reviews",
+    "description": "Night shift checks that notifications support the plan rather than drive it."
+  },
+  {
+    "from": "loop-engineering",
+    "to": "futureme",
+    "relationship": "updates",
+    "description": "Loop engineering improves FutureMe through focused cycles."
+  }
+]

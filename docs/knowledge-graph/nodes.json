@@ -1,0 +1,254 @@
+[
+  {
+    "id": "futureme",
+    "label": "FutureMe",
+    "type": "product",
+    "description": "Mobile-first energy-aware planning companion centred on what the user should focus on next.",
+    "relatedFiles": ["docs/knowledge/futureme-product-vision.md", "docs/knowledge/futureme-current-state.md"]
+  },
+  {
+    "id": "monthly-setup",
+    "label": "Monthly Setup",
+    "type": "flow",
+    "description": "Setup flow where the user enters fixed commitments, sleep settings, routines, and capacity.",
+    "relatedFiles": ["docs/knowledge/futureme-user-flows.md"]
+  },
+  {
+    "id": "fixed-commitments",
+    "label": "Fixed Commitments",
+    "type": "concept",
+    "description": "Anchored events such as work, appointments, deadlines, social plans, and sleep.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "work-shifts",
+    "label": "Work Shifts",
+    "type": "input",
+    "description": "Work commitments that constrain schedule generation and recovery rules.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "appointments",
+    "label": "Appointments",
+    "type": "input",
+    "description": "Fixed appointments that should not be moved automatically.",
+    "relatedFiles": ["docs/knowledge/futureme-user-flows.md"]
+  },
+  {
+    "id": "deadlines",
+    "label": "Deadlines",
+    "type": "input",
+    "description": "Due dates or due-time anchors that influence daily focus.",
+    "relatedFiles": ["docs/knowledge/futureme-user-flows.md"]
+  },
+  {
+    "id": "social-plans",
+    "label": "Social Plans",
+    "type": "input",
+    "description": "Fixed or semi-fixed social commitments in the user's month.",
+    "relatedFiles": ["docs/knowledge/futureme-user-flows.md"]
+  },
+  {
+    "id": "sleep-settings",
+    "label": "Sleep Settings",
+    "type": "input",
+    "description": "Wake and bedtime anchors that prevent scheduling outside the user's day.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "flexible-activities",
+    "label": "Flexible Activities",
+    "type": "concept",
+    "description": "Routines FutureMe can place around fixed commitments.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "gym",
+    "label": "Gym",
+    "type": "routine",
+    "description": "Flexible activity scheduled mainly in the morning and reduced by lower capacity.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "cleaning",
+    "label": "Cleaning",
+    "type": "routine",
+    "description": "Flexible activity scheduled during daytime and reduced by essentials capacity.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "meal-prep",
+    "label": "Meal Prep",
+    "type": "routine",
+    "description": "Flexible activity scheduled in afternoon/evening and preserved even in essentials capacity.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "food-shop",
+    "label": "Food Shop",
+    "type": "routine",
+    "description": "Flexible activity scheduled in realistic daytime/evening windows.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "self-care",
+    "label": "Self-care",
+    "type": "routine",
+    "description": "Flexible care activity that increases during softer/essentials capacity.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "capacity-check",
+    "label": "Capacity Check",
+    "type": "logic",
+    "description": "Energy/load state that influences routine frequency, pressure, and What’s Next recommendations.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md", "docs/knowledge/futureme-whats-next-engine.md"]
+  },
+  {
+    "id": "notification-vibe",
+    "label": "Notification Vibe",
+    "type": "setting",
+    "description": "User-selected tone for optional notification nudges.",
+    "relatedFiles": ["docs/knowledge/futureme-notification-system.md", "docs/knowledge/futureme-ui-style-guide.md"]
+  },
+  {
+    "id": "daily-dashboard",
+    "label": "Daily Dashboard",
+    "type": "ui",
+    "description": "Primary product surface that shows what is next and what matters today.",
+    "relatedFiles": ["docs/knowledge/futureme-user-flows.md", "docs/knowledge/futureme-ui-style-guide.md"]
+  },
+  {
+    "id": "whats-next-engine",
+    "label": "What’s Next Engine",
+    "type": "logic",
+    "description": "Central product logic for current task, next task, overdue work, recommendations, and nudges.",
+    "relatedFiles": ["docs/knowledge/futureme-whats-next-engine.md"]
+  },
+  {
+    "id": "active-task",
+    "label": "Active Task",
+    "type": "task-state",
+    "description": "Task currently needing attention.",
+    "relatedFiles": ["docs/knowledge/futureme-whats-next-engine.md"]
+  },
+  {
+    "id": "upcoming-task",
+    "label": "Upcoming Task",
+    "type": "task-state",
+    "description": "Task scheduled soon but not currently active.",
+    "relatedFiles": ["docs/knowledge/futureme-whats-next-engine.md"]
+  },
+  {
+    "id": "overdue-task",
+    "label": "Overdue Task",
+    "type": "task-state",
+    "description": "Task whose planned time has passed without completion.",
+    "relatedFiles": ["docs/knowledge/futureme-whats-next-engine.md", "docs/knowledge/futureme-known-bugs.md"]
+  },
+  {
+    "id": "completed-task",
+    "label": "Completed Task",
+    "type": "task-state",
+    "description": "Task marked complete by the user.",
+    "relatedFiles": ["docs/knowledge/futureme-whats-next-engine.md"]
+  },
+  {
+    "id": "rescheduled-task",
+    "label": "Rescheduled Task",
+    "type": "task-state",
+    "description": "Task moved from its original scheduled slot.",
+    "relatedFiles": ["docs/knowledge/futureme-whats-next-engine.md"]
+  },
+  {
+    "id": "daily-focus",
+    "label": "Daily Focus",
+    "type": "output",
+    "description": "Main recommended focus for the user today or now.",
+    "relatedFiles": ["docs/knowledge/futureme-whats-next-engine.md"]
+  },
+  {
+    "id": "notification-nudge",
+    "label": "Notification Nudge",
+    "type": "output",
+    "description": "Optional notification derived from schedule and What’s Next state.",
+    "relatedFiles": ["docs/knowledge/futureme-notification-system.md"]
+  },
+  {
+    "id": "push-notifications",
+    "label": "Push Notifications",
+    "type": "infrastructure",
+    "description": "Web Push delivery system for optional reminder nudges.",
+    "relatedFiles": ["docs/knowledge/futureme-notification-system.md", "docs/research/pwa-ios-push-notifications.md"]
+  },
+  {
+    "id": "supabase",
+    "label": "Supabase",
+    "type": "infrastructure",
+    "description": "Database used for push subscriptions and scheduled reminders.",
+    "relatedFiles": ["docs/knowledge/futureme-supabase-schema.md", "supabase.sql"]
+  },
+  {
+    "id": "vercel",
+    "label": "Vercel",
+    "type": "infrastructure",
+    "description": "Hosting and API route platform for FutureMe.",
+    "relatedFiles": ["docs/knowledge/futureme-deployment.md"]
+  },
+  {
+    "id": "service-worker",
+    "label": "Service Worker",
+    "type": "infrastructure",
+    "description": "PWA worker supporting app shell caching and push notification events.",
+    "relatedFiles": ["public/sw.js", "docs/knowledge/futureme-notification-system.md"]
+  },
+  {
+    "id": "scheduled-reminders",
+    "label": "Scheduled Reminders",
+    "type": "data",
+    "description": "Supabase rows representing pending/sent/failed/cancelled reminder nudges.",
+    "relatedFiles": ["docs/knowledge/futureme-supabase-schema.md", "api/reminders/sync.js", "api/cron/send-reminders.js"]
+  },
+  {
+    "id": "push-subscriptions",
+    "label": "Push Subscriptions",
+    "type": "data",
+    "description": "Supabase rows storing browser push endpoints and keys.",
+    "relatedFiles": ["docs/knowledge/futureme-supabase-schema.md", "api/push/subscribe.js"]
+  },
+  {
+    "id": "scheduling-engine",
+    "label": "Scheduling Engine",
+    "type": "logic",
+    "description": "Planner logic that generates monthly tasks from inputs, rules, and capacity.",
+    "relatedFiles": ["src/planner/autoPlanner.ts", "docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "rules-engine",
+    "label": "Rules Engine",
+    "type": "logic",
+    "description": "Constraints for realistic task placement and schedule quality.",
+    "relatedFiles": ["docs/knowledge/futureme-scheduling-rules.md"]
+  },
+  {
+    "id": "completion-system",
+    "label": "Completion System",
+    "type": "logic",
+    "description": "Task completion state used by the dashboard and future What’s Next Engine.",
+    "relatedFiles": ["docs/knowledge/futureme-whats-next-engine.md"]
+  },
+  {
+    "id": "night-shift-workflow",
+    "label": "Night Shift Workflow",
+    "type": "workflow",
+    "description": "Safe review/report workflow for repo state, docs, bugs, tests, and next prompts.",
+    "relatedFiles": ["docs/night-shift/README.md", "docs/night-shift/latest-report.md"]
+  },
+  {
+    "id": "loop-engineering",
+    "label": "Loop Engineering",
+    "type": "workflow",
+    "description": "Repeated focused improvement cycles with context, tests, summary, and next loop.",
+    "relatedFiles": ["docs/loops/README.md", "docs/loops/active-loop.md"]
+  }
+]

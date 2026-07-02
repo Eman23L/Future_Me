@@ -1,0 +1,25 @@
+# FutureMe Glossary
+
+- Fixed commitment: A time-bound item the user has already committed to, such as work, an appointment, a deadline, or a social plan.
+- Flexible activity: A routine or task FutureMe can place intelligently around fixed commitments.
+- Capacity: The user's current energy/load state, used to adjust frequency and pressure.
+- Routine: A repeating flexible activity such as gym, cleaning, meal prep, food shop, or self-care.
+- Rule: A scheduling constraint or product principle that affects placement or recommendations.
+- Reminder: A scheduled notification row or planned nudge.
+- Push subscription: Browser endpoint details stored so Web Push can send notifications.
+- Notification nudge: Optional push notification that points the user back to FutureMe.
+- PWA: Progressive Web App installable on mobile and desktop.
+- VAPID: Web Push identity key system used for push notifications.
+- Service worker: Browser worker that supports PWA caching and push events.
+- What’s Next Engine: Central logic that decides current task, next task, overdue tasks, completed tasks, recommendations, and notification nudges.
+- Active task: A task that currently needs attention.
+- Upcoming task: A task scheduled soon but not active yet.
+- Overdue task: A task whose planned time has passed without completion.
+- Completed task: A task marked done.
+- Rescheduled task: A task moved from its original time/date.
+- Daily focus: The main thing FutureMe recommends the user focus on today or now.
+- Loop engineering: Repeated focused improvement cycles with documented context, tests, results, and next actions.
+- Knowledge graph: Repo-native structured markdown and JSON that captures product, logic, architecture, and relationships.
+- Night shift: Safe review/report workflow that can run while the user is away.
+- Agentic coding: Codex-assisted engineering where the agent reads context, makes focused changes, tests, and records outcomes.
+- Schema design: Planning and maintaining database tables, fields, relationships, and migration implications.
