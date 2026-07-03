@@ -1,3 +1,4 @@
+import { createSeedState } from "./seed";
 import type { PlannerState } from "../models/types";
 import type { PlannerRepository } from "./PlannerRepository";
 
@@ -111,13 +112,35 @@ function storageKey(baseKey: string, storageNamespace = "") {
   return storageNamespace ? `${storageNamespace}:${baseKey}` : baseKey;
 }
 
-function migrate(state: PlannerState): PlannerState {
-  const sourceDate = state.monthlyInputs[0]?.date ?? localDateKey(new Date());
+function migrate(rawState: Partial<PlannerState>): PlannerState {
+  const sourceMonth = typeof rawState.plannedMonth === "string" ? rawState.plannedMonth : currentMonthKey();
+  const seed = createSeedState(sourceMonth);
+  const safeState: PlannerState = {
+    ...seed,
+    ...rawState,
+    settings: {
+      ...seed.settings,
+      ...(rawState.settings ?? {})
+    },
+    monthlyInputs: Array.isArray(rawState.monthlyInputs) ? rawState.monthlyInputs : [],
+    routines: Array.isArray(rawState.routines) ? rawState.routines : [],
+    rules: {
+      ...seed.rules,
+      ...(rawState.rules ?? {}),
+      selected: Array.isArray(rawState.rules?.selected) ? rawState.rules.selected : []
+    },
+    capacityChecks: Array.isArray(rawState.capacityChecks) ? rawState.capacityChecks : [],
+    explanations: Array.isArray(rawState.explanations) ? rawState.explanations : [],
+    plannedTasks: Array.isArray(rawState.plannedTasks) ? rawState.plannedTasks : [],
+    plannedMonth: sourceMonth,
+    setupComplete: Boolean(rawState.setupComplete)
+  };
+  const sourceDate = safeState.monthlyInputs[0]?.date ?? localDateKey(new Date());
   const hasDemoContent =
-    state.monthlyInputs.some((input) => DEMO_INPUT_IDS.has(input.id)) ||
-    state.routines.some((routine) => DEMO_ROUTINE_IDS.has(routine.id)) ||
-    state.rules.custom === DEMO_CUSTOM_RULE;
-  const monthlyInputs = state.monthlyInputs
+    safeState.monthlyInputs.some((input) => DEMO_INPUT_IDS.has(input.id)) ||
+    safeState.routines.some((routine) => DEMO_ROUTINE_IDS.has(routine.id)) ||
+    safeState.rules.custom === DEMO_CUSTOM_RULE;
+  const monthlyInputs = safeState.monthlyInputs
     .filter((input) => !DEMO_INPUT_IDS.has(input.id))
     .map((input) => {
       const oldFakeTime = input.startTime === "23:59";
@@ -127,8 +150,8 @@ function migrate(state: PlannerState): PlannerState {
       if (input.category === "deadline") return { ...input, startTime: "09:00", endTime: "09:30", timeWasDefaulted: true, notes: appendNote(input.notes, "Due time not set.") };
       return input;
     });
-  const routines = state.routines.filter((routine) => !DEMO_ROUTINE_IDS.has(routine.id));
-  const plannedTasks = state.plannedTasks
+  const routines = safeState.routines.filter((routine) => !DEMO_ROUTINE_IDS.has(routine.id));
+  const plannedTasks = safeState.plannedTasks
     .filter((task) => {
       if (DEMO_INPUT_IDS.has(task.sourceId) || DEMO_ROUTINE_IDS.has(task.sourceId)) return false;
       if (task.sourceType === "prep" && DEMO_INPUT_IDS.has(task.sourceId)) return false;
@@ -143,21 +166,18 @@ function migrate(state: PlannerState): PlannerState {
     }));
   const rules = {
     selected: hasDemoContent
-      ? state.rules.selected.filter((rule) => !DEMO_RULE_IDS.has(rule))
-      : state.rules.selected,
-    custom: state.rules.custom === DEMO_CUSTOM_RULE ? "" : state.rules.custom
+      ? safeState.rules.selected.filter((rule) => !DEMO_RULE_IDS.has(rule))
+      : safeState.rules.selected,
+    custom: safeState.rules.custom === DEMO_CUSTOM_RULE ? "" : safeState.rules.custom
   };
 
   return {
-    ...state,
+    ...safeState,
     monthlyInputs,
     routines,
     rules,
     plannedTasks,
-    capacityChecks: state.capacityChecks ?? [],
-    plannedMonth: state.plannedMonth ?? sourceDate.slice(0, 7),
-    setupComplete: state.setupComplete ?? false,
-    explanations: state.explanations ?? []
+    plannedMonth: safeState.plannedMonth ?? sourceDate.slice(0, 7)
   };
 }
 
