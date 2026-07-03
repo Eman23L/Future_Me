@@ -1,11 +1,11 @@
-@import url("https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;500;600;700;800;900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:wght@400;500;600;700;800;900&display=swap");
 
 :root {
   color-scheme: light;
   font-family: "Nunito Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #35292e;
   background: #fff7f6;
-  --display: "Nunito Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --display: "Fredoka", "Nunito Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --body: "Nunito Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --ink: #35292e;
   --muted: #806f75;
@@ -20,8 +20,8 @@
   --sky: #dff1ff;
   --button-gradient: linear-gradient(135deg, #d86f90 0%, #c75e83 54%, #b77ca4 100%);
   --paper-shadow: 0 18px 46px rgba(116, 75, 88, 0.11);
-  --lift-shadow: 0 12px 28px rgba(150, 59, 92, 0.12);
-  --shadow: 0 24px 58px rgba(150, 59, 92, 0.12);
+  --lift-shadow: 0 16px 34px rgba(150, 59, 92, 0.14);
+  --shadow: 0 26px 62px rgba(150, 59, 92, 0.13);
   --work: #6b8fd6;
   --social: #58ad84;
   --deadline: #a678cc;
@@ -48,9 +48,15 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 18% 0%, #ffe1eb 0 24%, transparent 25%),
     linear-gradient(160deg, #fff7f6 0%, #f6f0ff 48%, #effaf3 100%);
+  color: var(--ink);
+  font-family: var(--body);
+  font-weight: 600;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -77,14 +83,15 @@ textarea {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 56px;
+  min-height: 58px;
   border: 1px solid rgba(214, 176, 186, 0.42);
-  border-radius: 22px;
+  border-radius: 26px;
   padding: 14px 16px;
   background: rgba(255, 255, 255, 0.86);
   color: var(--ink);
   box-sizing: border-box;
   outline-color: var(--rose);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
 textarea {
@@ -93,10 +100,11 @@ textarea {
 }
 
 .mobile-shell {
-  width: min(100%, 480px);
+  width: 100%;
+  max-width: 480px;
   min-height: 100svh;
   margin: 0 auto;
-  padding: calc(env(safe-area-inset-top) + 22px) 20px calc(env(safe-area-inset-bottom) + 30px);
+  padding: calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 30px);
 }
 
 .flow-screen {
@@ -136,12 +144,12 @@ textarea {
   min-width: 50px;
   height: 50px;
   min-height: 50px;
-  border-radius: 22px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.7);
   color: var(--rose-dark);
   font-size: 1.45rem;
   font-weight: 700;
-  box-shadow: 0 10px 26px rgba(45, 37, 40, 0.07);
+  box-shadow: 0 10px 26px rgba(45, 37, 40, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(14px);
   cursor: pointer;
   position: relative;
@@ -158,8 +166,8 @@ textarea {
   width: auto;
   min-width: 64px;
   padding: 0 14px;
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: 0.86rem;
+  font-weight: 900;
 }
 
 .install-button {
@@ -176,7 +184,7 @@ textarea {
   color: var(--muted);
   text-align: center;
   font-size: 0.82rem;
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .flow-footer {
@@ -186,10 +194,10 @@ textarea {
 
 .home-action {
   min-height: 44px;
-  border-radius: 20px;
+  border-radius: 999px;
   background: rgba(255, 231, 238, 0.82);
   color: var(--rose-dark);
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .welcome-card,
@@ -197,10 +205,24 @@ textarea {
 .today-card,
 .task-section {
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 36px;
+  border-radius: 42px;
   background: var(--card);
   box-shadow: var(--shadow);
   backdrop-filter: blur(22px);
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-card::before,
+.step-card::before,
+.today-card::before,
+.task-section::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.42), transparent 42%);
 }
 
 .welcome-card {
@@ -208,7 +230,7 @@ textarea {
   min-height: calc(100svh - 118px);
   flex-direction: column;
   justify-content: center;
-  padding: 40px 28px;
+  padding: 42px 28px;
 }
 
 .welcome-card h1,
@@ -217,10 +239,11 @@ textarea {
   margin: 0;
   color: var(--ink);
   font-family: var(--display);
-  font-size: clamp(2.35rem, 10.5vw, 3.55rem);
-  font-weight: 900;
+  font-size: clamp(2.08rem, 8.7vw, 3.15rem);
+  font-weight: 700;
   line-height: 1.08;
   letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .welcome-card p:not(.pill),
@@ -228,7 +251,7 @@ textarea {
   margin: 16px 0 0;
   color: var(--muted);
   font-size: 1.04rem;
-  font-weight: 500;
+  font-weight: 650;
   line-height: 1.68;
 }
 
@@ -240,7 +263,7 @@ textarea {
 
 .welcome-actions .secondary-action {
   min-height: 52px;
-  border-radius: 22px;
+  border-radius: 999px;
   font-weight: 800;
 }
 
@@ -252,7 +275,7 @@ textarea {
   background: rgba(255, 231, 238, 0.76);
   color: var(--rose-dark);
   font-size: 0.76rem;
-  font-weight: 700;
+  font-weight: 900;
   letter-spacing: 0;
 }
 
@@ -266,7 +289,7 @@ textarea {
 
 .step-card {
   min-height: calc(100svh - 118px);
-  padding: 30px 24px;
+  padding: 32px 22px;
 }
 
 .choice-stack,
@@ -289,11 +312,11 @@ textarea {
   width: 100%;
   min-height: 78px;
   border: 1px solid rgba(214, 176, 186, 0.32);
-  border-radius: 28px;
+  border-radius: 32px;
   background: rgba(255, 255, 255, 0.74);
   color: var(--ink);
   text-align: left;
-  box-shadow: 0 10px 26px rgba(116, 75, 88, 0.055);
+  box-shadow: 0 10px 26px rgba(116, 75, 88, 0.055), inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
 .choice,
@@ -369,7 +392,7 @@ textarea {
 .category-card strong,
 .task-card strong {
   font-size: 1.02rem;
-  font-weight: 700;
+  font-weight: 900;
   letter-spacing: 0;
 }
 
@@ -381,7 +404,7 @@ textarea {
 .unfinished-row small {
   color: var(--muted);
   font-size: 0.94rem;
-  font-weight: 500;
+  font-weight: 650;
   line-height: 1.5;
 }
 
@@ -410,7 +433,7 @@ textarea {
   min-height: 108px;
   padding: 12px 8px;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 28px;
   background: #fff;
   color: var(--ink);
   text-align: center;
@@ -427,7 +450,7 @@ textarea {
   width: 46px;
   height: 46px;
   border: 1px solid rgba(234, 215, 217, 0.58);
-  border-radius: 18px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.72);
   color: var(--rose-dark);
   font-family: var(--display);
@@ -448,20 +471,20 @@ textarea {
 .task-card button,
 .schedule-row button {
   width: 100%;
-  min-height: 56px;
+  min-height: 58px;
   margin-top: 28px;
-  border-radius: 24px;
+  border-radius: 999px;
   background: var(--button-gradient);
   color: white;
-  font-weight: 700;
-  box-shadow: 0 14px 30px rgba(189, 82, 119, 0.24);
+  font-weight: 900;
+  box-shadow: 0 14px 30px rgba(189, 82, 119, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .secondary-action {
   background: #fff;
   color: var(--rose-dark);
   border: 1px solid var(--line);
-  box-shadow: none;
+  box-shadow: 0 10px 24px rgba(116, 75, 88, 0.07);
 }
 
 .month-picker {
@@ -472,7 +495,7 @@ textarea {
   margin-top: 28px;
   margin-bottom: 26px;
   padding: 12px;
-  border-radius: 26px;
+  border-radius: 32px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(214, 176, 186, 0.28);
   box-shadow: 0 10px 26px rgba(116, 75, 88, 0.055);
@@ -480,12 +503,14 @@ textarea {
 
 .month-picker strong {
   text-align: center;
-  font-size: 1.42rem;
+  font-family: var(--display);
+  font-size: 1.36rem;
+  font-weight: 700;
 }
 
 .month-picker button {
   min-height: 54px;
-  border-radius: 18px;
+  border-radius: 999px;
   background: rgba(255, 231, 238, 0.78);
   color: var(--rose-dark);
   font-size: 1.8rem;
@@ -496,7 +521,7 @@ textarea {
   gap: 18px;
   margin-top: 28px;
   padding: 18px;
-  border-radius: 30px;
+  border-radius: 34px;
   background: rgba(255, 255, 255, 0.68);
   border: 1px solid rgba(214, 176, 186, 0.28);
   box-shadow: 0 10px 26px rgba(116, 75, 88, 0.055);
@@ -539,14 +564,6 @@ textarea {
   text-align: center;
 }
 
-.sleep-fix-marker {
-  margin: 8px 0 0;
-  color: var(--muted);
-  text-align: center;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
 .install-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -561,7 +578,7 @@ textarea {
 .install-modal {
   width: min(100%, 390px);
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 32px;
+  border-radius: 36px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: var(--shadow);
   padding: 24px;
@@ -570,7 +587,9 @@ textarea {
 .install-modal h2 {
   margin: 0;
   color: var(--ink);
+  font-family: var(--display);
   font-size: 1.55rem;
+  font-weight: 700;
   line-height: 1.18;
 }
 
@@ -589,17 +608,6 @@ textarea {
   color: var(--muted);
   font-weight: 700;
   line-height: 1.5;
-}
-
-.standalone-debug {
-  margin: 16px 0 0;
-  padding: 10px 12px;
-  border-radius: 16px;
-  background: rgba(255, 231, 238, 0.62);
-  color: var(--rose-dark);
-  font-size: 0.76rem;
-  font-weight: 800;
-  line-height: 1.4;
 }
 
 label {
@@ -633,7 +641,7 @@ label {
   gap: 8px;
   margin-top: 28px;
   padding: 14px;
-  border-radius: 30px;
+  border-radius: 34px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(214, 176, 186, 0.28);
   box-shadow: 0 10px 26px rgba(116, 75, 88, 0.055);
@@ -642,7 +650,7 @@ label {
 .calendar-card button,
 .calendar-card span {
   aspect-ratio: 1;
-  border-radius: 17px;
+  border-radius: 999px;
 }
 
 .calendar-card button {
@@ -682,7 +690,7 @@ label {
   place-items: center;
   width: 86px;
   height: 86px;
-  border-radius: 32px;
+  border-radius: 999px;
   background: linear-gradient(135deg, #fff, var(--rose-soft));
   color: var(--rose-dark);
   font-family: var(--display);
@@ -695,7 +703,7 @@ label {
   margin: 0;
   font-family: var(--display);
   font-size: 2.7rem;
-  font-weight: 900;
+  font-weight: 700;
   line-height: 1.08;
 }
 
@@ -708,6 +716,7 @@ label {
   display: grid;
   gap: 16px;
   padding: 16px;
+  border-radius: 34px;
 }
 
 .flex-card.selected {
@@ -744,6 +753,7 @@ label {
   height: 28px;
   border-radius: 999px;
   background: #ead7d9;
+  box-shadow: inset 0 1px 3px rgba(45, 37, 40, 0.08);
 }
 
 .toggle span {
@@ -779,7 +789,7 @@ label {
   color: var(--muted);
   padding: 0 14px;
   font-size: 0.86rem;
-  font-weight: 700;
+  font-weight: 900;
 }
 
 .option-pill.selected {
@@ -813,7 +823,7 @@ label {
 
 .summary-strip span,
 .mini-list span {
-  border-radius: 16px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.82);
   color: var(--muted);
   padding: 10px;
@@ -844,7 +854,7 @@ label {
 
 .dashboard-top h1 {
   margin-bottom: 8px;
-  font-size: 2.85rem;
+  font-size: clamp(2.2rem, 9vw, 2.9rem);
   line-height: 1.04;
 }
 
@@ -870,7 +880,7 @@ label {
   margin-bottom: 18px;
   padding: 12px;
   border: 1px solid rgba(214, 176, 186, 0.26);
-  border-radius: 28px;
+  border-radius: 34px;
   background: rgba(255, 255, 255, 0.72);
   box-shadow: var(--paper-shadow);
 }
@@ -892,7 +902,7 @@ label {
 
 .day-nav button {
   min-height: 44px;
-  border-radius: 18px;
+  border-radius: 999px;
   background: rgba(255, 231, 238, 0.78);
   color: var(--rose-dark);
   font-size: 1.35rem;
@@ -903,7 +913,7 @@ label {
   width: 100%;
   min-height: 46px;
   margin: -4px 0 18px;
-  border-radius: 20px;
+  border-radius: 999px;
   background: rgba(255, 231, 238, 0.82);
   color: var(--rose-dark);
   font-weight: 800;
@@ -917,8 +927,8 @@ label {
 .task-section h2 {
   margin: 0;
   font-family: var(--display);
-  font-size: 1.38rem;
-  font-weight: 900;
+  font-size: 1.42rem;
+  font-weight: 700;
   line-height: 1.24;
   letter-spacing: 0;
 }
@@ -934,7 +944,7 @@ label {
 .reminder-status {
   padding: 12px 14px;
   border: 1px solid rgba(214, 176, 186, 0.3);
-  border-radius: 18px;
+  border-radius: 26px;
   background: rgba(255, 231, 238, 0.5);
   color: var(--rose-dark);
   font-size: 0.9rem;
@@ -947,7 +957,7 @@ label {
   margin-top: 12px;
   padding: 12px 14px;
   border: 1px solid rgba(143, 63, 93, 0.22);
-  border-radius: 18px;
+  border-radius: 26px;
   background: rgba(255, 255, 255, 0.64);
   color: var(--muted);
   font-size: 0.76rem;
@@ -988,8 +998,9 @@ label {
   margin-top: 10px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 22px;
+  border-radius: 28px;
   background: #fff;
+  box-shadow: 0 8px 20px rgba(116, 75, 88, 0.055);
 }
 
 .task-card.done {
@@ -1013,12 +1024,15 @@ label {
   grid-template-columns: 56px auto 1fr;
   gap: 12px;
   align-items: start;
-  padding: 18px 0;
+  margin-top: 10px;
+  padding: 14px;
   border-top: 1px solid rgba(214, 176, 186, 0.28);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.66);
 }
 
 .schedule-row:first-of-type {
-  border-top: 0;
+  border-top: 1px solid rgba(214, 176, 186, 0.28);
 }
 
 .schedule-row.done {
@@ -1089,7 +1103,7 @@ label {
   gap: 1px;
   overflow: hidden;
   border: 1px solid rgba(214, 176, 186, 0.28);
-  border-radius: 28px;
+  border-radius: 34px;
   background: rgba(214, 176, 186, 0.22);
 }
 
@@ -1135,7 +1149,7 @@ label {
 .month-task-chip,
 .month-more {
   overflow: hidden;
-  border-radius: 5px;
+  border-radius: 999px;
   padding: 2px 4px;
   color: #fff;
   font-size: 0.56rem;
@@ -1161,7 +1175,7 @@ label {
   background: var(--rose-soft);
   color: var(--rose-dark);
   font-size: 0.82rem;
-  font-weight: 850;
+  font-weight: 900;
 }
 
 .dot {
@@ -1174,7 +1188,7 @@ label {
 .empty-state {
   padding: 20px;
   border: 1px dashed rgba(214, 176, 186, 0.42);
-  border-radius: 28px;
+  border-radius: 32px;
   color: var(--muted);
   text-align: center;
 }
@@ -1196,7 +1210,7 @@ label {
   margin: 0;
   padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 26px;
   background: rgba(255, 255, 255, 0.76);
   color: var(--muted);
   line-height: 1.4;
@@ -1212,7 +1226,7 @@ label {
   gap: 8px;
   padding: 8px;
   border: 1px solid rgba(234, 215, 217, 0.62);
-  border-radius: 28px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 18px 44px rgba(116, 75, 88, 0.12);
   backdrop-filter: blur(18px);
@@ -1220,12 +1234,12 @@ label {
 
 .bottom-nav button {
   min-height: 48px;
-  border-radius: 21px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   padding: 0 6px;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 900;
 }
 
 .bottom-nav .active {

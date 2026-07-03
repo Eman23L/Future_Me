@@ -217,7 +217,10 @@ export function App() {
   const [scheduledReminderCount, setScheduledReminderCount] = useState<number | null>(null);
   const [pushEndpoint, setPushEndpoint] = useState(localStorage.getItem(PUSH_ENDPOINT_KEY) ?? "");
   const stepRef = useRef(step);
+  const selectedDateRef = useRef(selectedDate);
   const lastHistoryStep = useRef<FlowStep | null>(null);
+  const lastHistoryDate = useRef<string | null>(null);
+  const applyingHistoryPop = useRef(false);
   const storageNamespace = accountIdentity ? `future-me:account:${accountIdentity.userId}` : "";
   const service = useMemo(
     () => new PlannerService(new LocalPlannerRepository(storageNamespace)),
@@ -274,41 +277,37 @@ export function App() {
 
   useEffect(() => {
     stepRef.current = step;
+    selectedDateRef.current = selectedDate;
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
 
-    if (lastHistoryStep.current !== step) {
-      window.history.pushState({ futureMe: true, step }, "", window.location.href);
+    if (applyingHistoryPop.current) {
+      applyingHistoryPop.current = false;
       lastHistoryStep.current = step;
+      lastHistoryDate.current = selectedDate;
+      return;
+    }
+
+    if (lastHistoryStep.current !== step || lastHistoryDate.current !== selectedDate) {
+      window.history.pushState({ futureMe: true, step, selectedDate }, "", window.location.href);
+      lastHistoryStep.current = step;
+      lastHistoryDate.current = selectedDate;
     }
   }, [step, selectedDate]);
 
   useEffect(() => {
-    window.history.replaceState({ futureMe: true, step: stepRef.current }, "", window.location.href);
-    window.history.pushState({ futureMe: true, step: stepRef.current, guard: true }, "", window.location.href);
+    window.history.replaceState({ futureMe: true, step: stepRef.current, selectedDate: selectedDateRef.current }, "", window.location.href);
     lastHistoryStep.current = stepRef.current;
+    lastHistoryDate.current = selectedDateRef.current;
 
-    const onPopState = () => {
-      const currentStep = stepRef.current;
-      if (currentStep === "start") {
-        window.history.pushState({ futureMe: true }, "", window.location.href);
-        return;
-      }
+    const onPopState = (event: PopStateEvent) => {
+      const historyState = event.state as { futureMe?: boolean; step?: FlowStep; selectedDate?: string | null } | null;
+      if (!historyState?.futureMe || !historyState.step) return;
 
-      const targetStep = currentStep === "review"
-        ? "month"
-        : currentStep === "calendar"
-          ? "review"
-          : previousStep(currentStep);
-
-      if (currentStep === "review") {
-        setStep(targetStep);
-      } else if (currentStep === "calendar") {
-        setStep(targetStep);
-      } else {
-        setStep(targetStep);
-      }
-      lastHistoryStep.current = targetStep;
-      window.history.pushState({ futureMe: true, step: targetStep, guard: true }, "", window.location.href);
+      applyingHistoryPop.current = true;
+      lastHistoryStep.current = historyState.step;
+      lastHistoryDate.current = historyState.selectedDate ?? null;
+      setSelectedDate(historyState.selectedDate ?? null);
+      setStep(historyState.step);
     };
 
     window.addEventListener("popstate", onPopState);
@@ -881,7 +880,7 @@ function FlowShell({
       {showHeader && (
         <footer className="flow-footer">
           <button type="button" className="home-action" onClick={onHome} disabled={step === "start"}>Home</button>
-          <p className="storage-note">Saved on this device for {monthLabel(state.plannedMonth)}. UI fix v2</p>
+          <p className="storage-note">Saved on this device for {monthLabel(state.plannedMonth)}.</p>
         </footer>
       )}
     </main>
@@ -967,7 +966,6 @@ function MonthSetupStep({
         <label>Wake-up time<input type="time" value={state.settings.wakeTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, wakeTime: event.target.value } })} /></label>
         <label>Bedtime<input type="time" value={state.settings.bedTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, bedTime: event.target.value } })} /></label>
       </div>
-      <p className="sleep-fix-marker">Sleep oval spacing fix v6</p>
       <button className="bottom-action" onClick={onNext}>Continue</button>
     </StepCard>
   );
@@ -1416,22 +1414,9 @@ function ReminderInstructionsModal({ open, onClose }: { open: boolean; onClose: 
           <li>Open FutureMe from your Home Screen</li>
           <li>Then tap Enable reminders</li>
         </ol>
-        <StandaloneDebugLine />
         <button type="button" className="bottom-action" onClick={onClose}>Got it</button>
       </section>
     </div>
-  );
-}
-
-function StandaloneDebugLine() {
-  const navigatorStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-  const displayModeStandalone = window.matchMedia("(display-mode: standalone)").matches;
-  const standalone = navigatorStandalone || displayModeStandalone;
-
-  return (
-    <p className="standalone-debug">
-      standalone: {String(standalone)} | navigator.standalone: {String(navigatorStandalone)} | display-mode standalone: {String(displayModeStandalone)}
-    </p>
   );
 }
 

@@ -2,7 +2,7 @@
 
 ## Date
 
-Updated on 2026-07-03 after the production planner load fallback loop.
+Updated on 2026-07-04 after the mobile UI refresh and back navigation loop.
 
 ## Repo State
 
@@ -22,6 +22,8 @@ Run `npm run test:scheduler` before closing the loop.
 - Dashboard and What's Next helpers now ignore invalid saved task rows before sorting or building reminder state.
 - Production root cause found with headless Edge DevTools: `getBrowserSupabase` crashed when `import.meta.env` was undefined while reading `VITE_SUPABASE_URL`.
 - Auth and reminder debug env reads now treat Vite env as optional so signed-out/local mode can continue when frontend Supabase env is unavailable.
+- Mobile UI refresh applied: same colour palette and flow, friendlier Fredoka display font, rounder/bubblier cards and controls, and visible debug copy removed from user-facing screens.
+- Browser/iPhone/Android back navigation now restores the previous FutureMe app history state, including selected dates, instead of manually guessing a previous step.
 - Notifications are documented as a core V1 accountability feature.
 - Reminder generation is centralized in `src/services/whatsNext.ts`.
 - Notification copy variation is centralized in `src/services/notificationCopy.ts`.
@@ -34,7 +36,7 @@ Run `npm run test:scheduler` before closing the loop.
 
 ## Bugs Noticed
 
-- Watch production after the auth env guard deploy to confirm `futureme.thetechbuilder.co.uk` no longer shows the global planner load fallback.
+- Watch production after the UI/back-navigation deploy to confirm phone flow, visual fit, and native back behavior.
 - Production scheduler still needs to be configured for due reminders.
 - Need API-level due sender tests if route mocking is added.
 - Production may need one-time cleanup SQL for old June pending reminders.
@@ -60,11 +62,11 @@ Current scheduler has capacity-based routine placement and checks. More work is 
 
 ## Suggested Next Loop
 
-Verify production PWA loads after the auth env guard commit reaches Vercel, then configure production scheduler and clean up any existing old pending reminders.
+Verify the refreshed UI on a real phone/PWA and confirm native back behavior, then configure production scheduler and clean up any existing old pending reminders.
 
 ## Suggested Codex Prompt
 
-Use `docs/codex/codex-loop-prompt.md` with the goal: "Verify production PWA load after auth env guard hardening, then configure production due-reminder scheduling."
+Use `docs/codex/codex-loop-prompt.md` with the goal: "Verify the refreshed FutureMe UI and native back behavior on a real phone/PWA, then configure production due-reminder scheduling."
 
 ## Risk Level
 

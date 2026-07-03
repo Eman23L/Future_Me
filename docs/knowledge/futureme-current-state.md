@@ -24,7 +24,8 @@
 - Completion resyncs scheduled reminders so future pending reminders for completed tasks are cancelled or omitted.
 - Vercel deployment.
 - Custom domain with Cloudflare DNS.
-- Approved soft wellness UI style.
+- Approved soft wellness UI style with a friendlier bubbly mobile refresh.
+- Native browser/iPhone/Android back navigation restores the previous FutureMe app screen/date.
 - Account-scoped local storage support exists when a Supabase auth identity is present.
 - Signed-out/local mode remains supported and should continue using the existing local storage flow.
 
