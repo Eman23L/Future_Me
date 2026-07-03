@@ -42,8 +42,9 @@ type NotificationCopy = {
 };
 
 export function createNotificationCopy(input: NotificationCopyInput): NotificationCopy {
-  const bank = copyBanks[input.notificationVibe];
-  const seed = [input.notificationVibe, input.taskId, input.taskTitle, input.taskCategory, input.reminderType, input.scheduledFor].filter(Boolean).join("|");
+  const vibe = normalizeNotificationVibe(input.notificationVibe);
+  const bank = copyBanks[vibe];
+  const seed = [vibe, input.taskId, input.taskTitle, input.taskCategory, input.reminderType, input.scheduledFor].filter(Boolean).join("|");
   const group = copyGroupForCategory(input.taskCategory);
   const bodyTemplate = choose([...bank[group], ...bank.general], `${seed}|body`);
   const titleTemplate = choose(bank.titles, `${seed}|title`);
@@ -69,6 +70,12 @@ export function notificationMessage(personality: NotificationPersonality, title:
     timing: time === "now" ? "due-now" : time.startsWith("in ") ? "soon" : "soon",
     timeUntilTask: time
   }).body;
+}
+
+export function normalizeNotificationVibe(value: unknown): NotificationPersonality {
+  return value === "bestie" || value === "gentle" || value === "coach" || value === "professional" || value === "chaos"
+    ? value
+    : "gentle";
 }
 
 export function getNotificationCopyVariationCounts() {

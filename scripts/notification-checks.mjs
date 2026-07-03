@@ -40,6 +40,12 @@ const differentCopy = createNotificationCopy({
 });
 assert(stableA.body !== differentCopy.body, "different task/reminder combination should produce different wording");
 
+const fallbackCopy = createNotificationCopy({
+  ...stableInput,
+  notificationVibe: "old-vibe"
+});
+assert(typeof fallbackCopy.body === "string" && fallbackCopy.body.length > 0, "unknown saved notification vibe should fall back safely");
+
 const now = new Date("2026-07-03T12:00:00.000Z");
 const state = createState();
 const reminders = buildScheduledReminders(state, now);

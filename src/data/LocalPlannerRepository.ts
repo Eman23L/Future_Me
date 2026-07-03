@@ -1,6 +1,7 @@
 import { createSeedState } from "./seed";
 import type { PlannerState } from "../models/types";
 import type { PlannerRepository } from "./PlannerRepository";
+import { normalizeNotificationVibe } from "../services/notificationCopy";
 
 const STORAGE_KEY = "future-me:v1";
 const MONTHLY_STORAGE_KEY = "future-me:plans:v2";
@@ -120,7 +121,8 @@ function migrate(rawState: Partial<PlannerState>): PlannerState {
     ...rawState,
     settings: {
       ...seed.settings,
-      ...(rawState.settings ?? {})
+      ...(rawState.settings ?? {}),
+      notificationPersonality: normalizeNotificationVibe(rawState.settings?.notificationPersonality)
     },
     monthlyInputs: Array.isArray(rawState.monthlyInputs) ? rawState.monthlyInputs : [],
     routines: Array.isArray(rawState.routines) ? rawState.routines : [],
