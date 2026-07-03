@@ -13,7 +13,8 @@ Before making changes, Codex should:
 9. Run `npm run build`.
 10. Run `npm run test:scheduler` if available.
 11. Update docs if decisions changed.
-12. Summarise changed files.
-13. Commit and push only when asked or when the workflow requires it.
+12. Always update repo memory before finishing a loop so night shift knows where to pick up. At minimum, review `docs/night-shift/latest-report.md`, `docs/knowledge/futureme-next-actions.md`, and `docs/loops/active-loop.md`.
+13. Summarise changed files.
+14. Commit and push after completed changes unless explicitly told not to.
 
 Codex should not ask the user to re-explain FutureMe from scratch. Use the repo knowledge base first.
