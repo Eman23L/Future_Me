@@ -47,6 +47,7 @@ export type ReminderKind =
 
 export function getWhatsNext(state: PlannerState, now = new Date()): WhatsNextState {
   const tasks = state.plannedTasks
+    .filter(isUsableTask)
     .filter((task) => task.sourceType !== "sleep")
     .sort(compareTasks);
   const completedTasks = tasks.filter((task) => task.completed);
@@ -93,6 +94,7 @@ export function buildScheduledReminders(state: PlannerState, now = new Date()): 
   const reminders: ScheduledReminderPayload[] = [];
 
   state.plannedTasks
+    .filter(isUsableTask)
     .filter((task) => task.sourceType !== "sleep" && !task.completed)
     .forEach((task) => {
       const vibe = state.settings.notificationPersonality;
@@ -213,6 +215,10 @@ function compareTasks(a: PlannedTask, b: PlannedTask) {
   return `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`);
 }
 
+function isUsableTask(task: PlannedTask) {
+  return isDateKey(task.date) && isTimeValue(task.startTime) && isTimeValue(task.endTime);
+}
+
 function taskStart(task: PlannedTask) {
   return new Date(`${task.date}T${task.startTime}`);
 }
@@ -238,6 +244,14 @@ function addMinutesToLocalDateTime(date: string, time: string, minutes: number) 
 function timeToMinutes(time: string) {
   const [hours, minutes] = time.split(":").map(Number);
   return hours * 60 + minutes;
+}
+
+function isDateKey(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isTimeValue(value: unknown): value is string {
+  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 function offsetDate(date: string, offset: number) {

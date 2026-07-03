@@ -1509,13 +1509,14 @@ function hasCapacityCheckForWeek(state: PlannerState, date: string) {
 }
 
 function statusForCategory(state: PlannerState, category: Category) {
-  const count = state.monthlyInputs.filter((input) => input.category === category && input.date.startsWith(state.plannedMonth)).length;
+  const count = state.monthlyInputs.filter((input) => input.category === category && isDateKey(input.date) && input.date.startsWith(state.plannedMonth)).length;
   if (category === "work") return count === 1 ? "1 shift added" : `${count} shifts added`;
   return count === 1 ? "1 added" : `${count} added`;
 }
 
 function daySchedule(state: PlannerState, date: string) {
   const visible = state.plannedTasks
+    .filter(isDisplayableTask)
     .filter((task) => task.date === date && task.sourceType !== "sleep")
     .filter((task) => !(task.category === "deadline" && task.timeWasDefaulted))
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -1558,14 +1559,34 @@ function daySchedule(state: PlannerState, date: string) {
 
 function dueTodayItems(state: PlannerState, date: string) {
   return state.plannedTasks
+    .filter(isDisplayableTask)
     .filter((task) => task.date === date && task.category === "deadline" && task.timeWasDefaulted)
     .sort((a, b) => a.title.localeCompare(b.title));
 }
 
 function tasksForCalendarDay(state: PlannerState, date: string) {
   return state.plannedTasks
+    .filter(isDisplayableTask)
     .filter((task) => task.date === date && task.sourceType !== "sleep")
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
+}
+
+function isDisplayableTask(task: PlannedTask) {
+  return (
+    typeof task.title === "string" &&
+    isDateKey(task.date) &&
+    isTimeValue(task.startTime) &&
+    isTimeValue(task.endTime) &&
+    typeof task.sourceType === "string"
+  );
+}
+
+function isDateKey(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isTimeValue(value: unknown): value is string {
+  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 function scheduleTimeText(task: PlannedTask) {

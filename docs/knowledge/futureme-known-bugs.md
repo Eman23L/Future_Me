@@ -11,6 +11,17 @@
 - Priority: Medium.
 - Next suggested action: Add a clearer cache-busting/reinstall test note before PWA releases.
 
+## Production Planner Load Fallback With Older Saved Data
+
+- Status: Fixed in code; needs production verification.
+- Area: PWA/local storage migration.
+- Description: Production showed the global "Something went wrong while loading the planner" fallback even after the latest Vercel deployment was marked ready.
+- Steps to reproduce: Open `futureme.thetechbuilder.co.uk` in a browser/profile with older FutureMe PWA localStorage data.
+- Expected behaviour: Legacy saved planner data is migrated or safely ignored, and the planner loads.
+- Current behaviour: Migration now rejects malformed stored objects, invalid month/date/time values, invalid settings, invalid routines, and invalid planned tasks. Dashboard and What's Next helpers also skip invalid saved task rows before sorting or building state.
+- Priority: High.
+- Next suggested action: Confirm the fixed commit is deployed to production, then hard refresh or relaunch the PWA and verify the planner loads with existing user data.
+
 ## iPhone Standalone Mode Issues
 
 - Status: Watch.
