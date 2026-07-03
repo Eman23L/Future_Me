@@ -2,7 +2,7 @@
 
 ## Date
 
-Updated on 2026-07-03 after the production planner load fallback investigation.
+Updated on 2026-07-03 after the production planner load fallback loop.
 
 ## Repo State
 
@@ -20,6 +20,8 @@ Run `npm run test:scheduler` before closing the loop.
 
 - Local planner migration was further hardened so malformed older PWA/localStorage values, invalid date/time strings, invalid settings, and non-object stored state cannot crash planner load after deploys.
 - Dashboard and What's Next helpers now ignore invalid saved task rows before sorting or building reminder state.
+- Production root cause found with headless Edge DevTools: `getBrowserSupabase` crashed when `import.meta.env` was undefined while reading `VITE_SUPABASE_URL`.
+- Auth and reminder debug env reads now treat Vite env as optional so signed-out/local mode can continue when frontend Supabase env is unavailable.
 - Notifications are documented as a core V1 accountability feature.
 - Reminder generation is centralized in `src/services/whatsNext.ts`.
 - Notification copy variation is centralized in `src/services/notificationCopy.ts`.
@@ -32,7 +34,7 @@ Run `npm run test:scheduler` before closing the loop.
 
 ## Bugs Noticed
 
-- Watch production after the latest migration/display hardening deploy to confirm `futureme.thetechbuilder.co.uk` no longer shows the global planner load fallback.
+- Watch production after the auth env guard deploy to confirm `futureme.thetechbuilder.co.uk` no longer shows the global planner load fallback.
 - Production scheduler still needs to be configured for due reminders.
 - Need API-level due sender tests if route mocking is added.
 - Production may need one-time cleanup SQL for old June pending reminders.
@@ -58,11 +60,11 @@ Current scheduler has capacity-based routine placement and checks. More work is 
 
 ## Suggested Next Loop
 
-Verify production PWA loads with existing saved data after this commit reaches Vercel, then configure production scheduler and clean up any existing old pending reminders.
+Verify production PWA loads after the auth env guard commit reaches Vercel, then configure production scheduler and clean up any existing old pending reminders.
 
 ## Suggested Codex Prompt
 
-Use `docs/codex/codex-loop-prompt.md` with the goal: "Verify production PWA load after local planner migration hardening, then configure production due-reminder scheduling."
+Use `docs/codex/codex-loop-prompt.md` with the goal: "Verify production PWA load after auth env guard hardening, then configure production due-reminder scheduling."
 
 ## Risk Level
 

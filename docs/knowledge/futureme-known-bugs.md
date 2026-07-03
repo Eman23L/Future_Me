@@ -22,6 +22,17 @@
 - Priority: High.
 - Next suggested action: Confirm the fixed commit is deployed to production, then hard refresh or relaunch the PWA and verify the planner loads with existing user data.
 
+## Production Auth Env Read Crashed App Startup
+
+- Status: Fixed in code; needs production verification.
+- Area: Auth/startup.
+- Description: Production showed the global planner fallback because `getBrowserSupabase` read `import.meta.env.VITE_SUPABASE_URL` when `import.meta.env` was undefined in the deployed browser runtime.
+- Steps to reproduce: Load production and capture console through browser DevTools.
+- Expected behaviour: Missing or unavailable frontend Supabase env should disable browser auth gracefully and keep signed-out/local planner mode working.
+- Current behaviour: Auth startup now reads Vite env defensively and returns `null` Supabase client when URL/anon key are unavailable. Reminder debug env reads are also guarded.
+- Priority: High.
+- Next suggested action: Confirm the auth env guard commit is deployed to production and verify the planner loads.
+
 ## iPhone Standalone Mode Issues
 
 - Status: Watch.

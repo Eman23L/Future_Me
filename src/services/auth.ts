@@ -10,8 +10,9 @@ let browserClient: SupabaseClient | null | undefined;
 export function getBrowserSupabase() {
   if (browserClient !== undefined) return browserClient;
 
-  const url = import.meta.env.VITE_SUPABASE_URL;
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const viteEnv = (import.meta as ImportMeta & { env?: ImportMetaEnv }).env;
+  const url = viteEnv?.VITE_SUPABASE_URL;
+  const anonKey = viteEnv?.VITE_SUPABASE_ANON_KEY;
 
   browserClient = url && anonKey
     ? createClient(url, anonKey, {

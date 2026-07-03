@@ -1,6 +1,6 @@
 # FutureMe Next Actions
 
-1. Verify production PWA load after the latest legacy localStorage migration/display hardening deploy.
+1. Verify production PWA load after the auth env guard deploy.
 2. Configure production scheduler for `POST /api/reminders/send-due` with `CRON_SECRET`.
 3. Run one-time cleanup SQL for old pending reminders if production has stale June rows.
 4. Add API-level tests for due reminder sending when route mocking is practical.

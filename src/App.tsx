@@ -1866,7 +1866,8 @@ function isIosSafari() {
 }
 
 function isReminderDebugEnabled() {
-  return import.meta.env.DEV || localStorage.getItem("futuremeDebug") === "true";
+  const viteEnv = (import.meta as ImportMeta & { env?: ImportMetaEnv }).env;
+  return Boolean(viteEnv?.DEV) || localStorage.getItem("futuremeDebug") === "true";
 }
 
 function getLocalUserId() {
