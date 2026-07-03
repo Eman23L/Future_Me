@@ -1,5 +1,6 @@
 import { allowPostOnly, formatServerError, getRequestBody, getSupabaseAdmin, sendJson } from "../_lib/supabase.js";
 import { getWebPush, toPushSubscription } from "../_lib/webPush.js";
+import { reminderWindows } from "../_lib/reminderWindows.js";
 
 export default async function handler(request, response) {
   if (!allowPostOnly(request, response)) return;
@@ -13,15 +14,13 @@ export default async function handler(request, response) {
     const body = await getRequestBody(request);
     const userId = body.userId ?? null;
     const supabase = getSupabaseAdmin();
-    const nowDate = new Date();
-    const windowStart = new Date(nowDate.getTime() - 15 * 60 * 1000).toISOString();
-    const now = nowDate.toISOString();
+    const { windowStart, windowEnd, staleBefore } = reminderWindows();
 
     let reminderQuery = supabase
       .from("scheduled_reminders")
       .select("*")
       .eq("status", "pending")
-      .lte("scheduled_for", now)
+      .lte("scheduled_for", windowEnd)
       .gte("scheduled_for", windowStart)
       .order("scheduled_for", { ascending: true })
       .limit(100);
@@ -33,6 +32,7 @@ export default async function handler(request, response) {
     let checked = 0;
     let sent = 0;
     let failed = 0;
+    let stale = 0;
 
     for (const reminder of reminders ?? []) {
       checked += 1;
@@ -82,7 +82,18 @@ export default async function handler(request, response) {
       }
     }
 
-    sendJson(response, 200, { ok: true, checked, sent, failed });
+    let staleQuery = supabase
+      .from("scheduled_reminders")
+      .update({ status: "cancelled", updated_at: new Date().toISOString() }, { count: "exact" })
+      .eq("status", "pending")
+      .lt("scheduled_for", staleBefore);
+
+    staleQuery = userId ? staleQuery.eq("user_id", userId) : staleQuery;
+    const { count: staleCount, error: staleError } = await staleQuery;
+    if (staleError) throw staleError;
+    stale = staleCount ?? 0;
+
+    sendJson(response, 200, { ok: true, checked, sent, failed, stale });
   } catch (error) {
     sendJson(response, 500, formatServerError(error));
   }

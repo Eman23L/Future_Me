@@ -3,7 +3,8 @@ import { LocalPlannerRepository } from "./data/LocalPlannerRepository";
 import { createSeedState } from "./data/seed";
 import { PlannerService } from "./services/PlannerService";
 import { getBrowserSupabase, identityFromSession, resolveInitialAccount, type AccountIdentity } from "./services/auth";
-import { buildScheduledReminders, getWhatsNext, notificationMessage, type WhatsNextState } from "./services/whatsNext";
+import { notificationMessage } from "./services/notificationCopy";
+import { buildScheduledReminders, getWhatsNext, type WhatsNextState } from "./services/whatsNext";
 import type {
   CapacityMode,
   Category,

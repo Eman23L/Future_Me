@@ -1,4 +1,5 @@
 import type { Category, NotificationPersonality, PlannedTask, PlannerState } from "../models/types";
+import { createNotificationCopy, notificationMessage, type ReminderTiming } from "./notificationCopy.js";
 
 export type ScheduledReminderPayload = {
   taskId: string;
@@ -25,7 +26,7 @@ export type WhatsNextState = {
   targetDate: string | null;
 };
 
-type ReminderKind =
+export type ReminderKind =
   | "work-evening-before"
   | "work-one-hour"
   | "appointment-day-before"
@@ -59,7 +60,16 @@ export function getWhatsNext(state: PlannerState, now = new Date()): WhatsNextSt
   const notificationLead = nextTask ? Math.round((taskStart(nextTask).getTime() - now.getTime()) / 60000) : null;
   const shouldNotify = Boolean(nextTask && !nextTask.completed && notificationLead !== null && notificationLead >= 0 && notificationLead <= 60);
   const notificationBody = nextTask
-    ? reminderBody(state.settings.notificationPersonality, nextTask, reminderKindForTask(nextTask))
+    ? createNotificationCopy({
+      notificationVibe: state.settings.notificationPersonality,
+      taskId: nextTask.id,
+      taskTitle: nextTask.title,
+      taskCategory: nextTask.category,
+      reminderType: reminderKindForTask(nextTask),
+      timing: nextTask.missed ? "missed" : notificationLead !== null && notificationLead <= 0 ? "due-now" : "soon",
+      timeUntilTask: notificationLead === null ? "soon" : notificationLead <= 0 ? "now" : `in ${notificationLead} minutes`,
+      capacity: state.capacity
+    }).body
     : notificationMessage(state.settings.notificationPersonality, "your next task", "soon");
 
   return {
@@ -89,10 +99,21 @@ export function buildScheduledReminders(state: PlannerState, now = new Date()): 
       const addReminder = (kind: ReminderKind, scheduledFor: string) => {
         const reminderTime = new Date(scheduledFor).getTime();
         if (Number.isNaN(reminderTime) || reminderTime <= nowTime) return;
+        const copy = createNotificationCopy({
+          notificationVibe: vibe,
+          taskId: task.id,
+          taskTitle: task.title,
+          taskCategory: task.category,
+          reminderType: kind,
+          timing: timingForReminderKind(kind),
+          scheduledFor,
+          timeUntilTask: timingTextForReminderKind(kind),
+          capacity: state.capacity
+        });
         reminders.push({
           taskId: task.id,
-          title: "FutureMe reminder",
-          body: reminderBody(vibe, task, kind),
+          title: copy.title,
+          body: copy.body,
           scheduledFor,
           notificationVibe: vibe,
           taskDate: task.date,
@@ -155,18 +176,6 @@ export function buildScheduledReminders(state: PlannerState, now = new Date()): 
   return reminders;
 }
 
-export function notificationMessage(personality: NotificationPersonality, title: string, time: string) {
-  const when = time === "soon" || time === "now" || time.startsWith("in ") ? time : `at ${time}`;
-  const messages: Record<NotificationPersonality, string> = {
-    bestie: `Hey girlie pop, ${title} is ${when}. Let's make it easy for future you.`,
-    gentle: `Soft reminder, ${title} is coming up ${when}. Start when you feel ready.`,
-    coach: `${title} is coming up ${when}. Keep it simple and follow the plan.`,
-    professional: `Reminder: ${title} is scheduled ${when}. Please prepare accordingly.`,
-    chaos: `BESTIE. ${title} is ${when}. Shoes, water, brain cells. Go mode.`
-  };
-  return messages[personality];
-}
-
 function reminderKindForTask(task: PlannedTask): ReminderKind {
   if (task.category === "work") return "work-one-hour";
   if (task.category === "appointment") return "appointment-two-hours";
@@ -179,70 +188,25 @@ function reminderKindForTask(task: PlannedTask): ReminderKind {
   return "prep-one-hour";
 }
 
-function reminderBody(personality: NotificationPersonality, task: PlannedTask, kind: ReminderKind) {
-  const title = task.title;
-
-  if (kind === "work-evening-before") {
-    const messages: Record<NotificationPersonality, string> = {
-      bestie: "Hey girlie pop, work is tomorrow. Uniform, lunch, water bottle. Future you says thanks.",
-      gentle: "Soft reminder, work is tomorrow. Uniform, lunch and water bottle when you can.",
-      coach: "Work tomorrow. Prep uniform, lunch and water bottle tonight.",
-      professional: "Reminder: work is scheduled tomorrow. Please prepare your essentials.",
-      chaos: "BESTIE. Work tomorrow. Uniform. Lunch. Water bottle. Go mode."
-    };
-    return messages[personality];
-  }
-
-  if (kind === "work-one-hour") {
-    const messages: Record<NotificationPersonality, string> = {
-      bestie: "Hey girlie pop, work starts in 1 hour. Let's get future you out the door calmly.",
-      gentle: "Soft reminder, work starts in 1 hour. Start getting ready when you can.",
-      coach: "Work starts in 1 hour. Get ready and follow the plan.",
-      professional: "Reminder: work starts in 1 hour. Please prepare accordingly.",
-      chaos: "WORK IN 1 HOUR. Shoes. Bag. Water. Go mode."
-    };
-    return messages[personality];
-  }
-
-  if (kind === "appointment-day-before") return vibeLine(personality, `${title} is tomorrow.`, `${title} is tomorrow. Check the time, place and anything you need.`);
-  if (kind === "appointment-two-hours") return vibeLine(personality, `${title} is in 2 hours.`, `${title} is in 2 hours. Leave yourself enough time to get ready.`);
-  if (kind === "social-morning-of") return vibeLine(personality, `${title} is today.`, `${title} is today. Check plans and give yourself space to get ready.`);
-  if (kind === "social-two-hours") return vibeLine(personality, `${title} is in 2 hours.`, `${title} is in 2 hours. Time to start easing into it.`);
-  if (kind === "social-untimed-morning") return vibeLine(personality, `${title} is today.`, `${title} is today. The time was not set, so check the plan when you can.`);
-
-  if (kind === "deadline-day-before") {
-    const messages: Record<NotificationPersonality, string> = {
-      bestie: `Hey girlie pop, ${title} is due tomorrow. Tiny steady steps now.`,
-      gentle: `Soft reminder, ${title} is due tomorrow. Give yourself a calm check-in today.`,
-      coach: `${title} is due tomorrow. Review the final pieces today.`,
-      professional: `Reminder: ${title} is due tomorrow. Please review your preparation.`,
-      chaos: `BESTIE. ${title} is tomorrow. Open the thing. Finish the thing.`
-    };
-    return messages[personality];
-  }
-
-  if (kind === "deadline-untimed-day-before") return vibeLine(personality, `${title} is due tomorrow.`, `${title} is due tomorrow. No due time was set, so give it some attention today.`);
-  if (kind === "deadline-morning-of") return vibeLine(personality, `${title} is today.`, `${title} is today. Start with the next kind step.`);
-  if (kind === "gym-evening-before") return vibeLine(personality, "Gym is tomorrow.", "Gym is tomorrow. Put your kit, water and shoes somewhere easy.");
-  if (kind === "gym-one-hour") return notificationMessage(personality, "Gym", "in about an hour");
-  if (kind === "cleaning-one-hour") return vibeLine(personality, "Cleaning is in 1 hour.", "Cleaning is in 1 hour. Keep it simple and start with one reset.");
-  if (kind === "meal-prep-one-hour") return vibeLine(personality, "Meal prep is in 1 hour.", "Meal prep is in 1 hour. Future you will be grateful.");
-  if (kind === "food-shop-one-hour") return vibeLine(personality, "Food shop is in 1 hour.", "Food shop is in 1 hour. Check your list before you go.");
-  if (kind === "self-care-thirty-minutes") return vibeLine(personality, "Self-care is in 30 minutes.", "Self-care is in 30 minutes. Protect the reset.");
-  if (kind === "prep-one-hour") return vibeLine(personality, `${title} is in 1 hour.`, `${title} is in 1 hour. A small prep block now will help later.`);
-
-  return notificationMessage(personality, title, "soon");
+function timingForReminderKind(kind: ReminderKind): ReminderTiming {
+  if (kind.includes("evening-before")) return "evening-before";
+  if (kind.includes("day-before")) return "24-hours-before";
+  if (kind.includes("two-hours")) return "2-hours-before";
+  if (kind.includes("one-hour")) return "1-hour-before";
+  if (kind.includes("thirty-minutes")) return "30-min-before";
+  if (kind.includes("morning-of") || kind.includes("untimed-morning")) return "morning-of";
+  return "soon";
 }
 
-function vibeLine(personality: NotificationPersonality, shortLine: string, gentleLine: string) {
-  const messages: Record<NotificationPersonality, string> = {
-    bestie: `Hey girlie pop, ${shortLine} Let's make it easy for future you.`,
-    gentle: `Soft reminder, ${gentleLine}`,
-    coach: `${shortLine} Keep it simple and follow the plan.`,
-    professional: `Reminder: ${shortLine}`,
-    chaos: `BESTIE. ${shortLine} Shoes, water, brain cells. Go mode.`
-  };
-  return messages[personality];
+function timingTextForReminderKind(kind: ReminderKind) {
+  const timing = timingForReminderKind(kind);
+  if (timing === "evening-before") return "tomorrow";
+  if (timing === "24-hours-before") return "in about 24 hours";
+  if (timing === "2-hours-before") return "in about 2 hours";
+  if (timing === "1-hour-before") return "in about 1 hour";
+  if (timing === "30-min-before") return "in about 30 minutes";
+  if (timing === "morning-of") return "today";
+  return "soon";
 }
 
 function compareTasks(a: PlannedTask, b: PlannedTask) {

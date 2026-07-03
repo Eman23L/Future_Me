@@ -78,8 +78,8 @@ Returns:
 }
 ```
 
-The same module builds scheduled reminder payloads from incomplete planned tasks and selected notification personality.
+The same module builds scheduled reminder payloads from incomplete planned tasks and selected notification personality. Notification wording itself lives in `src/services/notificationCopy.ts`, which uses seeded variation banks so reminders feel human without changing unpredictably on every sync.
 
 ## Implementation Notes
 
-The first implementation is deterministic and uses current planner state. Future loops should add focused tests and deepen missed-task decisions, reschedule suggestions, and overload handling.
+The first implementation is deterministic and uses current planner state. Notification service checks now cover variation counts, seeded stability, different wording for different task/reminder combinations, completed-task filtering, and stale-window calculation. Future loops should deepen missed-task decisions, reschedule suggestions, overload handling, and API-level route tests.

@@ -33,6 +33,17 @@
 - Priority: High.
 - Next suggested action: Wire Supabase cron/pg_net, Vercel Cron, or protected scheduler to `POST /api/reminders/send-due` with `Authorization: Bearer <CRON_SECRET>`.
 
+## Old Pending Reminders Can Become Stale
+
+- Status: Fixed in endpoint logic; production data may need cleanup.
+- Area: Backend reminders.
+- Description: Pending reminders from weeks ago should not stay pending forever or send late.
+- Steps to reproduce: Leave `scheduled_reminders` rows pending with `scheduled_for` older than 24 hours.
+- Expected behaviour: Old pending reminders are marked cancelled/stale by the due sender and are not sent.
+- Current behaviour: `POST /api/reminders/send-due` cancels pending reminders older than 24 hours and returns a `stale` count.
+- Priority: Medium.
+- Next suggested action: Run one-time cleanup SQL for existing old pending rows if production already has June stale reminders.
+
 ## Debug Reminder Buttons Visible To Normal Users
 
 - Status: Fixed in app code.
@@ -84,7 +95,7 @@
 - Description: A first deterministic engine exists, but missed-task decisions, rescheduling suggestions, and overload handling need deeper rules/tests.
 - Steps to reproduce: Inspect `src/services/whatsNext.ts`.
 - Expected behaviour: One deterministic engine powers dashboard and nudges with test coverage.
-- Current behaviour: Engine powers dashboard/reminder copy, but logic needs dedicated tests and richer task decisions.
+- Current behaviour: Engine powers dashboard/reminder copy and notification service checks exist, but deeper task-decision tests are still needed.
 - Priority: High.
 - Next suggested action: Add focused What's Next tests and overdue/reschedule product rules.
 
