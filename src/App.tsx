@@ -210,7 +210,7 @@ export function App() {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | "unsupported">(
     "Notification" in window ? Notification.permission : "unsupported"
   );
-  const [notificationsEnabled, setNotificationsEnabled] = useState(localStorage.getItem(NOTIFICATIONS_ENABLED_KEY) === "true");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationNotice, setNotificationNotice] = useState("");
   const [reminderDebug, setReminderDebug] = useState<ReminderDebugState>(emptyReminderDebug);
   const [showReminderDebug, setShowReminderDebug] = useState(false);
@@ -253,6 +253,54 @@ export function App() {
     return () => {
       mounted = false;
       authSubscription?.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function validateNotificationSubscription() {
+      const wasEnabled = localStorage.getItem(NOTIFICATIONS_ENABLED_KEY) === "true";
+      if (!("Notification" in window) || !("serviceWorker" in navigator) || Notification.permission !== "granted") {
+        localStorage.removeItem(NOTIFICATIONS_ENABLED_KEY);
+        localStorage.removeItem(PUSH_ENDPOINT_KEY);
+        if (mounted) {
+          setNotificationsEnabled(false);
+          setPushEndpoint("");
+        }
+        return;
+      }
+
+      try {
+        const registration = await navigator.serviceWorker.getRegistration("/");
+        const subscription = await registration?.pushManager.getSubscription();
+        if (!subscription) {
+          localStorage.removeItem(NOTIFICATIONS_ENABLED_KEY);
+          localStorage.removeItem(PUSH_ENDPOINT_KEY);
+          if (mounted) {
+            setNotificationsEnabled(false);
+            setPushEndpoint("");
+            if (wasEnabled) setNotificationNotice("Reminders need to be enabled again on this device.");
+          }
+          return;
+        }
+
+        localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, "true");
+        localStorage.setItem(PUSH_ENDPOINT_KEY, subscription.endpoint);
+        if (mounted) {
+          setNotificationsEnabled(true);
+          setPushEndpoint(subscription.endpoint);
+        }
+      } catch {
+        if (mounted && wasEnabled) {
+          setNotificationNotice("FutureMe could not verify reminders on this device. Try enabling them again.");
+        }
+      }
+    }
+
+    void validateNotificationSubscription();
+    return () => {
+      mounted = false;
     };
   }, []);
 
@@ -647,9 +695,11 @@ export function App() {
       localStorage.setItem(PUSH_ENDPOINT_KEY, subscription.endpoint);
       setPushEndpoint(subscription.endpoint);
       setNotificationsEnabled(true);
-      setNotificationNotice("Reminders are on. FutureMe can now nudge you from your schedule.");
       setReminderDebug((current) => ({ ...current, backendStatus: String(response.status), backendError: "" }));
-      if (state) await syncScheduledReminders(state);
+      const synced = state ? await syncScheduledReminders(state) : true;
+      if (synced) {
+        setNotificationNotice("Reminders are on. FutureMe can now nudge you from your schedule.");
+      }
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : "Reminder setup did not finish.";
       const message =
@@ -713,7 +763,7 @@ export function App() {
   }
 
   async function syncScheduledReminders(nextState: PlannerState) {
-    if (!nextState.setupComplete) return;
+    if (!nextState.setupComplete) return true;
 
     try {
       const response = await fetch("/api/reminders/sync", {
@@ -729,8 +779,13 @@ export function App() {
       if (!response.ok) throw new Error(parseBackendError(responseText));
       const result = JSON.parse(responseText) as { pendingCount?: number; count?: number };
       setScheduledReminderCount(result.pendingCount ?? result.count ?? null);
-    } catch {
-      // Reminder sync is best-effort; the local planner should keep working offline.
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown reminder sync error.";
+      setScheduledReminderCount(null);
+      setNotificationNotice(`Reminders are enabled, but the schedule could not sync: ${message}`);
+      setReminderDebug((current) => ({ ...current, backendError: message }));
+      return false;
     }
   }
 
