@@ -46,14 +46,14 @@
 
 ## Production Reminder Scheduler
 
-- Status: Fixed in code; needs deployment verification.
+- Status: Partially fixed.
 - Area: Backend reminders.
 - Description: The protected due reminder endpoint requires a production scheduler.
 - Steps to reproduce: Create scheduled reminders and wait without a scheduler calling the endpoint.
 - Expected behaviour: Due reminders are sent automatically.
-- Current behaviour: `vercel.json` schedules `/api/cron/send-reminders` every five minutes and the route uses the shared due-reminder sender.
+- Current behaviour: Both sender routes now use the same tested due-reminder logic, but the current Vercel plan rejects five-minute cron schedules and no external scheduler secret is configured.
 - Priority: High.
-- Next suggested action: Deploy and confirm cron invocations in Vercel. Use Supabase cron/pg_net or another protected scheduler if the Vercel plan does not support this frequency.
+- Next suggested action: Add `CRON_SECRET` to a Supabase cron/pg_net job or another external scheduler and call the endpoint every five minutes.
 
 ## Old Pending Reminders Can Become Stale
 
