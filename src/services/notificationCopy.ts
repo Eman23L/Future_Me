@@ -3,6 +3,7 @@ import type { CapacityMode, Category, NotificationPersonality } from "../models/
 export type ReminderTiming =
   | "evening-before"
   | "24-hours-before"
+  | "8-hours-before"
   | "2-hours-before"
   | "1-hour-before"
   | "30-min-before"
@@ -123,7 +124,8 @@ function copyGroupForCategory(category: Category): CopyGroup {
 
 function timingPhrase(timing: ReminderTiming, fallback = "soon") {
   if (timing === "evening-before") return "tomorrow";
-  if (timing === "24-hours-before") return "in about 24 hours";
+  if (timing === "24-hours-before") return "tomorrow";
+  if (timing === "8-hours-before") return "in about 8 hours";
   if (timing === "2-hours-before") return "in about 2 hours";
   if (timing === "1-hour-before") return "in about 1 hour";
   if (timing === "30-min-before") return "in about 30 minutes";

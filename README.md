@@ -114,6 +114,8 @@ To enable reminders:
 - `/api/push/subscribe` stores the subscription in Supabase.
 - Schedule generation syncs planned reminders through `/api/reminders/sync`.
 - `/api/cron/send-reminders` checks pending reminders and sends Web Push notifications with `web-push`.
+- Every upcoming non-sleep activity is synced with reminders 24 hours, 8 hours, and 1 hour before its start time.
+- Tapping a reminder opens that activity's date so the full day plan is visible.
 - Notification clicks open FutureMe and navigate to the task date when available.
 
 ## Data Architecture

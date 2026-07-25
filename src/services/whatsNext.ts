@@ -27,6 +27,9 @@ export type WhatsNextState = {
 };
 
 export type ReminderKind =
+  | "activity-24-hours"
+  | "activity-8-hours"
+  | "activity-1-hour"
   | "work-evening-before"
   | "work-one-hour"
   | "appointment-day-before"
@@ -123,56 +126,9 @@ export function buildScheduledReminders(state: PlannerState, now = new Date()): 
         });
       };
 
-      if (task.category === "work") {
-        addReminder("work-evening-before", localDateTimeToIso(offsetDate(task.date, -1), "20:00"));
-        addReminder("work-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-        return;
-      }
-
-      if (task.category === "appointment") {
-        addReminder("appointment-day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
-        addReminder("appointment-two-hours", addMinutesToLocalDateTime(task.date, task.startTime, -120));
-        return;
-      }
-
-      if (task.category === "social") {
-        if (task.timeWasDefaulted) {
-          addReminder("social-untimed-morning", localDateTimeToIso(task.date, "10:00"));
-        } else {
-          addReminder("social-morning-of", localDateTimeToIso(task.date, "10:00"));
-          addReminder("social-two-hours", addMinutesToLocalDateTime(task.date, task.startTime, -120));
-        }
-        return;
-      }
-
-      if (task.category === "deadline") {
-        if (task.timeWasDefaulted) {
-          addReminder("deadline-untimed-day-before", localDateTimeToIso(offsetDate(task.date, -1), "18:00"));
-          addReminder("deadline-morning-of", localDateTimeToIso(task.date, "09:00"));
-        } else {
-          addReminder("deadline-day-before", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
-          if (timeToMinutes(task.startTime) > timeToMinutes("09:00")) {
-            addReminder("deadline-morning-of", localDateTimeToIso(task.date, "09:00"));
-          }
-        }
-        return;
-      }
-
-      if (task.category === "gym") {
-        addReminder("gym-evening-before", localDateTimeToIso(offsetDate(task.date, -1), "20:00"));
-        addReminder("gym-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-        return;
-      }
-
-      if (task.category === "self-care") {
-        addReminder("self-care-thirty-minutes", addMinutesToLocalDateTime(task.date, task.startTime, -30));
-        return;
-      }
-
-      if (task.category === "cleaning") addReminder("cleaning-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-      if (task.category === "meal-prep") addReminder("meal-prep-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-      if (task.category === "food-shop") addReminder("food-shop-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
-      if (task.sourceType === "prep" && task.category !== "meal-prep") addReminder("prep-one-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
+      addReminder("activity-24-hours", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
+      addReminder("activity-8-hours", addMinutesToLocalDateTime(task.date, task.startTime, -8 * 60));
+      addReminder("activity-1-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
     });
 
   return reminders;
@@ -191,6 +147,9 @@ function reminderKindForTask(task: PlannedTask): ReminderKind {
 }
 
 function timingForReminderKind(kind: ReminderKind): ReminderTiming {
+  if (kind === "activity-24-hours") return "24-hours-before";
+  if (kind === "activity-8-hours") return "8-hours-before";
+  if (kind === "activity-1-hour") return "1-hour-before";
   if (kind.includes("evening-before")) return "evening-before";
   if (kind.includes("day-before")) return "24-hours-before";
   if (kind.includes("two-hours")) return "2-hours-before";
@@ -204,6 +163,7 @@ function timingTextForReminderKind(kind: ReminderKind) {
   const timing = timingForReminderKind(kind);
   if (timing === "evening-before") return "tomorrow";
   if (timing === "24-hours-before") return "in about 24 hours";
+  if (timing === "8-hours-before") return "in about 8 hours";
   if (timing === "2-hours-before") return "in about 2 hours";
   if (timing === "1-hour-before") return "in about 1 hour";
   if (timing === "30-min-before") return "in about 30 minutes";

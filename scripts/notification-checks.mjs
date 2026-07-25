@@ -48,9 +48,21 @@ assert(typeof fallbackCopy.body === "string" && fallbackCopy.body.length > 0, "u
 
 const now = new Date("2026-07-03T12:00:00.000Z");
 const state = createState();
-const reminders = buildScheduledReminders(state, now);
+const reminders = buildScheduledReminders(state, new Date("2026-07-03T00:00:00.000Z"));
 assert(reminders.every((reminder) => reminder.taskId !== "completed-gym"), "completed tasks should not get reminders");
 assert(reminders.some((reminder) => reminder.taskId === "active-gym"), "active upcoming tasks should get reminders");
+for (const taskId of ["active-gym", "active-meal"]) {
+  const taskReminders = reminders.filter((reminder) => reminder.taskId === taskId);
+  assert(taskReminders.length === 3, `${taskId}: every upcoming activity should get exactly three reminders`);
+}
+const gymStart = new Date("2026-07-04T10:00:00");
+const expectedGymTimes = [24, 8, 1].map((hours) => new Date(gymStart.getTime() - hours * 60 * 60 * 1000).toISOString());
+const actualGymTimes = reminders.filter((reminder) => reminder.taskId === "active-gym").map((reminder) => reminder.scheduledFor);
+assert(expectedGymTimes.every((time) => actualGymTimes.includes(time)), "activity reminders should be 24, 8, and 1 hour before");
+assert(
+  reminders.filter((reminder) => reminder.taskId === "active-gym").every((reminder) => reminder.taskDate === "2026-07-04"),
+  "notification deep links should retain the activity date"
+);
 
 const windows = reminderWindows(now);
 assert(windows.windowStart === "2026-07-03T11:45:00.000Z", "due window should start 15 minutes before now");
