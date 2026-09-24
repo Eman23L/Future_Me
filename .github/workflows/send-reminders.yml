@@ -25,6 +25,8 @@ jobs:
             echo "APP_URL and CRON_SECRET repository secrets must be set." >&2
             exit 1
           fi
+          # Always call over https: an http -> https redirect makes curl drop the Authorization header.
+          APP_URL="https://${APP_URL#*://}"
           result=$(curl --silent --show-error --location \
             --retry 3 --retry-delay 5 --max-time 60 \
             -H "Authorization: Bearer $CRON_SECRET" \
@@ -34,8 +36,8 @@ jobs:
           echo "HTTP $status after $redirects redirect(s)"
           start_host=$(echo "$APP_URL" | sed -E 's#^[a-z]+://([^/]+).*#\1#')
           final_host=$(echo "$final_url" | sed -E 's#^[a-z]+://([^/]+).*#\1#')
-          if [ "$start_host" != "$final_host" ]; then
-            echo "APP_URL redirects to a different host, which drops the Authorization header. Set APP_URL to the final address." >&2
+          if [ "$redirects" != "0" ]; then
+            echo "Warning: APP_URL redirects (host changed: $([ "$start_host" != "$final_host" ] && echo yes || echo no)). Redirects can drop the Authorization header; set APP_URL to the final https:// address." >&2
           fi
           cat response.txt; echo
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
