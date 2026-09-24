@@ -26,11 +26,15 @@ jobs:
           result=$(curl --silent --show-error --location \
             --retry 3 --retry-delay 5 --max-time 60 \
             -H "Authorization: Bearer $CRON_SECRET" \
-            -o response.txt -w "%{http_code} %{num_redirects}" \
+            -o response.txt -w "%{http_code} %{num_redirects} %{url_effective}" \
             "${APP_URL%/}/api/cron/send-reminders")
-          status=${result% *}
-          redirects=${result#* }
+          read -r status redirects final_url <<< "$result"
           echo "HTTP $status after $redirects redirect(s)"
+          start_host=$(echo "$APP_URL" | sed -E 's#^[a-z]+://([^/]+).*#\1#')
+          final_host=$(echo "$final_url" | sed -E 's#^[a-z]+://([^/]+).*#\1#')
+          if [ "$start_host" != "$final_host" ]; then
+            echo "APP_URL redirects to a different host, which drops the Authorization header. Set APP_URL to the final address." >&2
+          fi
           cat response.txt; echo
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
             echo "Reminder endpoint did not return 2xx. Check that APP_URL is the final https:// address of the app." >&2
