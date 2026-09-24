@@ -65,7 +65,7 @@ assert(
 );
 
 const windows = reminderWindows(now);
-assert(windows.windowStart === "2026-07-03T11:45:00.000Z", "due window should start 15 minutes before now");
+assert(windows.windowStart === "2026-07-03T11:00:00.000Z", "due window should start 60 minutes before now");
 assert(windows.windowEnd === "2026-07-03T12:00:00.000Z", "due window should end at now");
 assert(windows.staleBefore === "2026-07-02T12:00:00.000Z", `stale threshold should be ${STALE_THRESHOLD_HOURS} hours before now`);
 

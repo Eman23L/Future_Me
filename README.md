@@ -85,7 +85,12 @@ Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `VAPID_PRIVATE_KEY` in frontend cod
 3. Configure a scheduler to call `/api/cron/send-reminders` every 5 minutes.
 4. Set `CRON_SECRET` and make sure scheduled requests include `Authorization: Bearer <CRON_SECRET>`.
 
-The current Vercel plan does not support five-minute cron jobs, so connect Supabase cron/pg_net or another scheduler to the protected endpoint.
+The current Vercel plan does not support five-minute cron jobs, so `.github/workflows/send-reminders.yml` calls the protected endpoint every 5 minutes from GitHub Actions. Add two repository secrets in GitHub (Settings → Secrets and variables → Actions):
+
+- `APP_URL`: the production URL, e.g. `https://your-app.vercel.app`.
+- `CRON_SECRET`: the same value set in Vercel.
+
+GitHub may delay scheduled runs, so the endpoint sends any pending reminder due in the last 60 minutes (`DUE_WINDOW_MINUTES` in `api/_lib/reminderWindows.js`).
 
 ### iPhone Setup
 
