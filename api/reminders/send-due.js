@@ -22,7 +22,7 @@ export default async function handler(request, response) {
 
 function isAllowedCronRequest(request) {
   if (process.env.VERCEL_ENV !== "production") return true;
-  const secret = process.env.CRON_SECRET;
+  const secret = process.env.CRON_SECRET?.trim();
   if (!secret) return false;
-  return request.headers.authorization === `Bearer ${secret}`;
+  return request.headers.authorization?.trim() === `Bearer ${secret}`;
 }

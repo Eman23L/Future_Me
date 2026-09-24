@@ -19,6 +19,8 @@ jobs:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
+          APP_URL=$(printf '%s' "$APP_URL" | tr -d '[:space:]')
+          CRON_SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
           if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
             echo "APP_URL and CRON_SECRET repository secrets must be set." >&2
             exit 1
