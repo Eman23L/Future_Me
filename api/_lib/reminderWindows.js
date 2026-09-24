@@ -1,4 +1,4 @@
-export const DUE_WINDOW_MINUTES = 15;
+export const DUE_WINDOW_MINUTES = 60;
 export const STALE_THRESHOLD_HOURS = 24;
 
 export function reminderWindows(nowDate = new Date()) {
