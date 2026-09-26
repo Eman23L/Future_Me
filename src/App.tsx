@@ -920,11 +920,12 @@ function FlowShell({
   const progress = Math.max(1, setupSteps.indexOf(step) + 1);
   const total = setupSteps.length;
   const showHeader = step !== "loading" && step !== "generating";
+  const isHome = step === "start";
   return (
     <main className="mobile-shell flow-screen">
       {showHeader && (
         <header className="flow-top">
-          <button className="ghost-icon back-button" onClick={onBack} disabled={step === "start"} aria-label="Back">Back</button>
+          {!isHome && <button className="ghost-icon back-button" onClick={onBack} aria-label="Back">Back</button>}
           <div className="progress-track" aria-label={`Step ${progress} of ${total}`}>
             <span style={{ width: `${Math.min(100, (progress / total) * 100)}%` }} />
           </div>
@@ -934,7 +935,7 @@ function FlowShell({
       <div className="flow-content">{children}</div>
       {showHeader && (
         <footer className="flow-footer">
-          <button type="button" className="home-action" onClick={onHome} disabled={step === "start"}>Home</button>
+          {!isHome && <button type="button" className="home-action" onClick={onHome}>Home</button>}
           <p className="storage-note">Saved on this device for {monthLabel(state.plannedMonth)}.</p>
         </footer>
       )}
