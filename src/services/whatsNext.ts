@@ -60,7 +60,8 @@ export function getWhatsNext(state: PlannerState, now = new Date()): WhatsNextSt
     taskStart(task).getTime() <= now.getTime() && taskEnd(task).getTime() >= now.getTime()
   ) ?? null;
   const upcomingTasks = activeTasks.filter((task) => taskStart(task).getTime() > now.getTime());
-  const nextTask = currentTask ?? overdueTasks[0] ?? upcomingTasks[0] ?? null;
+  // Missed tasks stay in the day's list; the note always points at what is happening now or next.
+  const nextTask = currentTask ?? upcomingTasks[0] ?? null;
   const notificationLead = nextTask ? Math.round((taskStart(nextTask).getTime() - now.getTime()) / 60000) : null;
   const shouldNotify = Boolean(nextTask && !nextTask.completed && notificationLead !== null && notificationLead >= 0 && notificationLead <= 60);
   const notificationBody = nextTask

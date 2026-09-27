@@ -1,4 +1,5 @@
 import { generateMonthlyPlan } from "../build-src/planner/autoPlanner.js";
+import { register } from "node:module";
 
 const capacities = ["high", "normal", "tired", "survival"];
 const expected = {
@@ -42,6 +43,34 @@ for (const capacity of capacities) {
   });
 
   assertNoClashes(plan.tasks);
+}
+
+// Reopening the app must keep real routines whose ids match the old demo seed (e.g. "routine-gym").
+{
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: (key) => store.delete(key)
+  };
+  // The compiled repository uses extensionless relative imports; resolve them to .js files.
+  register(`data:text/javascript,${encodeURIComponent(`
+    export async function resolve(specifier, context, next) {
+      if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?js$/.test(specifier)) return next(specifier + ".js", context);
+      return next(specifier, context);
+    }
+  `)}`);
+  const { LocalPlannerRepository } = await import("../build-src/data/LocalPlannerRepository.js");
+  const repository = new LocalPlannerRepository();
+  const state = createState("normal");
+  // Real fixed events get random ids; the fixture's ids overlap the demo seed, so rename them.
+  state.monthlyInputs = state.monthlyInputs.map((input) => ({ ...input, id: `real-${input.id}` }));
+  state.plannedTasks = generateMonthlyPlan(state).tasks;
+  assert(state.plannedTasks.some((task) => task.sourceId === "routine-gym"), "fixture should include gym tasks");
+  await repository.save(state);
+  const reloaded = await repository.load(state.plannedMonth);
+  assert(reloaded.routines.length === state.routines.length, "reload should keep every real routine");
+  assert(reloaded.plannedTasks.length === state.plannedTasks.length, "reload should keep every planned task, including past ones");
 }
 
 console.log("Scheduler checks passed.");

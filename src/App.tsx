@@ -280,7 +280,7 @@ export function App() {
           if (mounted) {
             setNotificationsEnabled(false);
             setPushEndpoint("");
-            if (wasEnabled) setNotificationNotice("Reminders need to be enabled again on this device.");
+            if (wasEnabled) setNotificationNotice("Your reminders were switched off on this phone. Tap Enable reminders to turn them back on.");
           }
           return;
         }
@@ -293,7 +293,7 @@ export function App() {
         }
       } catch {
         if (mounted && wasEnabled) {
-          setNotificationNotice("FutureMe could not verify reminders on this device. Try enabling them again.");
+          setNotificationNotice("FutureMe couldn't check your reminders on this phone. Tap Enable reminders to switch them back on.");
         }
       }
     }
@@ -637,7 +637,7 @@ export function App() {
     if (permission !== "granted") {
       setReminderDebug({ ...emptyReminderDebug, permission, backendError: "Permission denied" });
       setShowReminderDebug(true);
-      setNotificationNotice("Permission denied. Notifications are not enabled yet.");
+      setNotificationNotice("Notifications are switched off for FutureMe. To turn them on, open your phone's Settings, tap Notifications, choose FutureMe and allow notifications. Then tap Enable reminders again.");
       return;
     }
 
@@ -715,7 +715,7 @@ export function App() {
       console.error("[FutureMe reminders] Reminder setup failed.", error);
       setReminderDebug((current) => ({ ...current, backendError: current.backendError || message }));
       setShowReminderDebug(true);
-      setNotificationNotice(message);
+      setNotificationNotice("Reminders couldn't be switched on just now. Please check your internet connection and try again.");
     }
   }
 
@@ -783,7 +783,7 @@ export function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown reminder sync error.";
       setScheduledReminderCount(null);
-      setNotificationNotice(`Reminders are enabled, but the schedule could not sync: ${message}`);
+      setNotificationNotice("Reminders are on, but FutureMe couldn't update them with your latest plan just now. Please check your internet connection and try again later.");
       setReminderDebug((current) => ({ ...current, backendError: message }));
       return false;
     }
@@ -1156,7 +1156,7 @@ function FlexibleActivitiesStep({ configs, onChange, onNext }: { configs: Flexib
                     <button key={option.value} className={config.durationMinutes === option.value ? "option-pill selected" : "option-pill"} onClick={() => patch(config.id, { durationMinutes: option.value })}>{option.label}</button>
                   ))}
                 </div>
-                <p className="capacity-helper">I'll decide how often to fit this in based on your weekly capacity.</p>
+                <p className="capacity-helper">I'll decide how often to fit this in based on how much energy you have each week.</p>
               </>
             )}
           </article>
@@ -1276,7 +1276,7 @@ function DailyApp({
         {notificationsEnabled && (
           <p className="reminder-copy">
             Reminders are on. FutureMe will nudge you from your schedule.
-            {scheduledReminderCount !== null ? ` ${scheduledReminderCount} scheduled reminders are pending.` : ""}
+            {scheduledReminderCount ? ` You have ${scheduledReminderCount === 1 ? "1 reminder" : `${scheduledReminderCount} reminders`} lined up.` : ""}
           </p>
         )}
         <div className="reminder-actions">
@@ -1288,7 +1288,7 @@ function DailyApp({
           {notificationsEnabled && reminderDebugEnabled && <button className="secondary-action" onClick={onSendDueReminders}>Send due reminders now</button>}
         </div>
         {notificationNotice && <p className="reminder-status">{notificationNotice}</p>}
-        {showReminderDebug && <ReminderDebugPanel debug={reminderDebug} />}
+        {showReminderDebug && reminderDebugEnabled && <ReminderDebugPanel debug={reminderDebug} />}
       </section>
 
       {dueToday.length > 0 && (
@@ -1320,7 +1320,7 @@ function DailyApp({
       <section className="task-section">
         <div className="section-title">
           <h2>Today, gently</h2>
-          <span>{tasks.length} items</span>
+          <span>{tasks.length === 1 ? "1 item" : `${tasks.length} items`}</span>
         </div>
         {tasks.length === 0 ? <div className="empty-state">No tasks planned for this day.</div> : tasks.map((task) => (
           <article key={task.id} className={task.completed ? "schedule-row done" : "schedule-row"}>
@@ -1643,7 +1643,7 @@ function scheduleSourceLabel(task: PlannedTask) {
 }
 
 function displayCategoryLabel(task: PlannedTask) {
-  if (task.sourceType === "sleep") return task.title === "Bedtime" ? "Sleep" : "Daily anchor";
+  if (task.sourceType === "sleep") return task.title === "Bedtime" ? "Sleep" : "Morning";
   return categoryLabels[task.category];
 }
 
