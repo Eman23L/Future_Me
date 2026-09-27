@@ -1,11 +1,14 @@
 import { allowPostOnly, formatServerError, getRequestBody, getSupabaseAdmin, sendJson } from "../_lib/supabase.js";
+import { checkCronAuth } from "../_lib/cronAuth.js";
 import { sendDueReminders } from "../_lib/sendDueReminders.js";
 
 export default async function handler(request, response) {
   if (!allowPostOnly(request, response)) return;
 
-  if (!isAllowedCronRequest(request)) {
-    sendJson(response, 401, { error: "Unauthorized" });
+  const auth = checkCronAuth(request);
+  if (!auth.ok) {
+    const { ok, ...details } = auth;
+    sendJson(response, 401, { error: "Unauthorized", ...details });
     return;
   }
 
@@ -18,11 +21,4 @@ export default async function handler(request, response) {
   } catch (error) {
     sendJson(response, 500, formatServerError(error));
   }
-}
-
-function isAllowedCronRequest(request) {
-  if (process.env.VERCEL_ENV !== "production") return true;
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  return request.headers.authorization?.trim() === `Bearer ${secret}`;
 }
