@@ -71,7 +71,7 @@ export function getWhatsNext(state: PlannerState, now = new Date()): WhatsNextSt
       taskCategory: nextTask.category,
       reminderType: reminderKindForTask(nextTask),
       timing: nextTask.missed ? "missed" : notificationLead !== null && notificationLead <= 0 ? "due-now" : "soon",
-      timeUntilTask: notificationLead === null ? "soon" : notificationLead <= 0 ? "now" : `in ${notificationLead} minutes`,
+      timeUntilTask: notificationLead === null ? "soon" : formatTimeUntil(notificationLead),
       capacity: state.capacity
     }).body
     : notificationMessage(state.settings.notificationPersonality, "your next task", "soon");
@@ -85,11 +85,28 @@ export function getWhatsNext(state: PlannerState, now = new Date()): WhatsNextSt
     activeTasks,
     shouldNotify,
     notificationReason: shouldNotify && nextTask ? `${nextTask.title} is coming up from the current plan.` : "",
-    notificationTiming: notificationLead === null ? null : notificationLead <= 0 ? "now" : `in ${notificationLead} minutes`,
+    notificationTiming: notificationLead === null ? null : formatTimeUntil(notificationLead),
     notificationBody,
     targetUrl: nextTask ? `/?date=${nextTask.date}` : "/",
     targetDate: nextTask?.date ?? null
   };
+}
+
+// Turns a lead time in minutes into friendly text, e.g. "in 45 minutes", "in 2 hours 15 minutes", "in 4 days".
+export function formatTimeUntil(minutes: number): string {
+  if (minutes <= 0) return "now";
+  if (minutes < 60) return `in ${plural(minutes, "minute")}`;
+  if (minutes < 6 * 60) {
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return rest === 0 ? `in ${plural(hours, "hour")}` : `in ${plural(hours, "hour")} ${plural(rest, "minute")}`;
+  }
+  if (minutes < 24 * 60) return `in about ${plural(Math.round(minutes / 60), "hour")}`;
+  return `in about ${plural(Math.round(minutes / (24 * 60)), "day")}`;
+}
+
+function plural(count: number, unit: string) {
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
 }
 
 export function buildScheduledReminders(state: PlannerState, now = new Date()): ScheduledReminderPayload[] {
