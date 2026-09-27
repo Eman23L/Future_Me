@@ -162,10 +162,12 @@ function migrate(rawValue: unknown): PlannerState {
     setupComplete: Boolean(rawState.setupComplete)
   };
   const sourceDate = safeState.monthlyInputs[0]?.date ?? localDateKey(new Date());
+  // Real routines reuse ids like "routine-gym", so routine ids alone can't identify the old demo
+  // seed. Only treat routines as demo data when the demo's fixed inputs or custom rule are present.
   const hasDemoContent =
     safeState.monthlyInputs.some((input) => DEMO_INPUT_IDS.has(input.id)) ||
-    safeState.routines.some((routine) => DEMO_ROUTINE_IDS.has(routine.id)) ||
     safeState.rules.custom === DEMO_CUSTOM_RULE;
+  const isDemoRoutineId = (id: string) => hasDemoContent && DEMO_ROUTINE_IDS.has(id);
   const monthlyInputs = safeState.monthlyInputs
     .filter((input) => !DEMO_INPUT_IDS.has(input.id))
     .map((input) => {
@@ -176,10 +178,10 @@ function migrate(rawValue: unknown): PlannerState {
       if (input.category === "deadline") return { ...input, startTime: "09:00", endTime: "09:30", timeWasDefaulted: true, notes: appendNote(input.notes, "Due time not set.") };
       return input;
     });
-  const routines = safeState.routines.filter((routine) => !DEMO_ROUTINE_IDS.has(routine.id));
+  const routines = safeState.routines.filter((routine) => !isDemoRoutineId(routine.id));
   const plannedTasks = safeState.plannedTasks
     .filter((task) => {
-      if (DEMO_INPUT_IDS.has(task.sourceId) || DEMO_ROUTINE_IDS.has(task.sourceId)) return false;
+      if (DEMO_INPUT_IDS.has(task.sourceId) || isDemoRoutineId(task.sourceId)) return false;
       if (task.sourceType === "prep" && DEMO_INPUT_IDS.has(task.sourceId)) return false;
       return true;
     })
