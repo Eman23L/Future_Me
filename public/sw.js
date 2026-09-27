@@ -1,4 +1,4 @@
-const CACHE_NAME = "future-me-v8";
+const CACHE_NAME = "future-me-v9";
 const OFFLINE_SHELL = "/index.html";
 const STATIC_ASSETS = [
   "/manifest.webmanifest",
