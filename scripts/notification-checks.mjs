@@ -1,5 +1,5 @@
 import { createNotificationCopy, getNotificationCopyVariationCounts } from "../build-src/services/notificationCopy.js";
-import { buildScheduledReminders } from "../build-src/services/whatsNext.js";
+import { buildScheduledReminders, formatTimeUntil } from "../build-src/services/whatsNext.js";
 import { reminderWindows, STALE_THRESHOLD_HOURS } from "../api/_lib/reminderWindows.js";
 
 const vibes = ["bestie", "gentle", "coach", "professional", "chaos"];
@@ -68,6 +68,14 @@ const windows = reminderWindows(now);
 assert(windows.windowStart === "2026-07-03T11:00:00.000Z", "due window should start 60 minutes before now");
 assert(windows.windowEnd === "2026-07-03T12:00:00.000Z", "due window should end at now");
 assert(windows.staleBefore === "2026-07-02T12:00:00.000Z", `stale threshold should be ${STALE_THRESHOLD_HOURS} hours before now`);
+
+const friendlyTimes = [
+  [0, "now"], [1, "in 1 minute"], [45, "in 45 minutes"], [60, "in 1 hour"], [75, "in 1 hour 15 minutes"],
+  [120, "in 2 hours"], [400, "in about 7 hours"], [1440, "in about 1 day"], [5389, "in about 4 days"]
+];
+for (const [minutes, expected] of friendlyTimes) {
+  assert(formatTimeUntil(minutes) === expected, `formatTimeUntil(${minutes}) should be "${expected}", got "${formatTimeUntil(minutes)}"`);
+}
 
 console.log("Notification checks passed.");
 
