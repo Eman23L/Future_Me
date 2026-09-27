@@ -1397,3 +1397,182 @@ label {
     text-align: center;
   }
 }
+
+/* ---------- Warmth pass: visual-only touches (no layout or copy changes) ---------- */
+
+:root {
+  --muted: #76606a;
+  --peach: #ffe4d6;
+  --glow-rose: rgba(240, 154, 178, 0.32);
+  --glow-lavender: rgba(196, 170, 236, 0.28);
+}
+
+body {
+  background:
+    radial-gradient(circle at 18% 0%, #ffe1eb 0 24%, transparent 25%),
+    radial-gradient(circle at 100% 38%, rgba(255, 228, 214, 0.75) 0 18%, transparent 36%),
+    radial-gradient(circle at 0% 92%, rgba(238, 229, 255, 0.8) 0 16%, transparent 34%),
+    linear-gradient(160deg, #fff7f6 0%, #f6f0ff 48%, #effaf3 100%);
+  background-attachment: fixed;
+}
+
+/* Soft sunrise glow in the corner of each main card */
+.welcome-card::after,
+.step-card::after {
+  content: "";
+  position: absolute;
+  top: -70px;
+  right: -60px;
+  width: 230px;
+  height: 230px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, var(--glow-rose) 0%, rgba(255, 228, 214, 0.35) 45%, transparent 70%);
+}
+
+.step-card::after {
+  top: -90px;
+  right: -90px;
+  width: 210px;
+  height: 210px;
+  opacity: 0.8;
+}
+
+.welcome-card > *,
+.step-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Welcome card: a small illustrated sun with sparkles fills the empty top space */
+.welcome-card {
+  background:
+    radial-gradient(circle at 50% 108%, var(--glow-lavender) 0%, transparent 48%),
+    var(--card);
+}
+
+.welcome-card::after {
+  top: 22px;
+  left: 18px;
+  right: 18px;
+  width: auto;
+  height: 96px;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 62px 48px, #fff8ef 0 10px, #ffd9c4 21px, #f7a7bf 30px, rgba(247, 167, 191, 0.22) 38px, transparent 46px),
+    radial-gradient(circle at 122px 20px, #f4b6c8 0 3.5px, transparent 4.5px),
+    radial-gradient(circle at 146px 56px, #cdb5ea 0 3px, transparent 4px),
+    radial-gradient(circle at 112px 80px, #ffd3b8 0 2.5px, transparent 3.5px);
+  animation: warm-float 6s ease-in-out infinite;
+}
+
+@media (max-height: 760px) {
+  .welcome-card::after {
+    display: none;
+  }
+}
+
+/* Friendlier labels */
+.pill,
+.eyebrow {
+  background: linear-gradient(135deg, #ffe7ee, #ffeede 60%, #f3eaff);
+  border: 1px solid rgba(216, 111, 144, 0.16);
+  box-shadow: 0 6px 14px rgba(216, 111, 144, 0.1);
+}
+
+/* Cards and choices: warmer tint, gentle lift when pressed */
+.choice,
+.category-card,
+.check-card,
+.routine-level-card,
+.flex-card {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.9), rgba(255, 246, 244, 0.82));
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.choice:active,
+.category-card:active,
+.check-card:active,
+.flex-card:active {
+  transform: scale(0.985);
+}
+
+@media (hover: hover) {
+  .choice:hover,
+  .category-card:hover,
+  .flex-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--lift-shadow);
+  }
+}
+
+.choice.selected {
+  border-color: rgba(216, 111, 144, 0.42);
+  background: linear-gradient(135deg, #fff5f8 0%, #ffe4ec 55%, #f6ebff 100%);
+  box-shadow: 0 0 0 3px rgba(216, 111, 144, 0.12), var(--lift-shadow);
+}
+
+.flex-card.selected {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(255, 238, 243, 0.85));
+}
+
+/* Category dots get a soft halo so each section feels distinct */
+.category-dot {
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.95), 0 0 0 6px rgba(214, 176, 186, 0.3), 0 4px 10px rgba(116, 75, 88, 0.14);
+}
+
+.category-card {
+  border-left: 4px solid rgba(214, 176, 186, 0.45);
+}
+
+.category-card:has(.category-dot.work) { border-left-color: color-mix(in srgb, var(--work) 55%, white); }
+.category-card:has(.category-dot.appointment) { border-left-color: color-mix(in srgb, var(--appointment) 55%, white); }
+.category-card:has(.category-dot.deadline) { border-left-color: color-mix(in srgb, var(--deadline) 55%, white); }
+.category-card:has(.category-dot.social) { border-left-color: color-mix(in srgb, var(--social) 55%, white); }
+
+/* Primary buttons: a touch more glow */
+.bottom-action {
+  box-shadow: 0 16px 30px rgba(216, 111, 144, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Today heading: never split a word across lines */
+.dashboard-top h1 {
+  overflow-wrap: break-word;
+  font-size: clamp(1.9rem, 8.2vw, 2.9rem);
+}
+
+/* Gentle entrance */
+.welcome-card,
+.step-card,
+.today-card,
+.task-section {
+  animation: warm-rise 420ms ease-out both;
+}
+
+@keyframes warm-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes warm-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-card,
+  .step-card,
+  .today-card,
+  .task-section,
+  .welcome-card::after {
+    animation: none;
+  }
+
+  .choice,
+  .category-card,
+  .check-card,
+  .routine-level-card,
+  .flex-card {
+    transition: none;
+  }
+}
