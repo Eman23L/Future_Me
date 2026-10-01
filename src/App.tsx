@@ -309,7 +309,9 @@ export function App() {
 
     const today = isoToday();
     const monthKey = today.slice(0, 7);
-    const requestedDate = new URLSearchParams(window.location.search).get("date");
+    const params = new URLSearchParams(window.location.search);
+    const requestedDate = params.get("date");
+    const openToday = params.get("view") === "today";
     setRealToday(today);
     service.load(monthKey)
       .then(async (loaded) => {
@@ -317,7 +319,7 @@ export function App() {
         const withPlan = withCurrentMonth.setupComplete ? await service.generate(withCurrentMonth) : withCurrentMonth;
         setFlexibleConfigs(configsFromRoutines(withPlan.routines));
         setSelectedDate(requestedDate && withPlan.setupComplete ? requestedDate : null);
-        setStep(requestedDate && withPlan.setupComplete ? "review" : "start");
+        setStep((requestedDate || openToday) && withPlan.setupComplete ? "review" : "start");
         setState(withPlan);
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : "Unable to load planner data."));

@@ -1,4 +1,4 @@
-const CACHE_NAME = "future-me-v9";
+const CACHE_NAME = "future-me-v10";
 const OFFLINE_SHELL = "/index.html";
 const STATIC_ASSETS = [
   "/manifest.webmanifest",
@@ -61,7 +61,7 @@ self.addEventListener("push", (event) => {
       icon: payload.icon || "/icons/icon.svg",
       badge: payload.badge || "/icons/icon.svg",
       data: payload.data || {},
-      tag: payload.data?.task_id || payload.title,
+      tag: payload.tag || payload.data?.reminder_id || payload.data?.task_id || payload.title,
       renotify: true
     })
   );
