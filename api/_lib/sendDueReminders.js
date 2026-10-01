@@ -40,10 +40,15 @@ export async function sendDueReminders(supabase, userId = undefined) {
           body: reminder.body,
           icon: "/icons/icon.svg",
           badge: "/icons/icon.svg",
+          // Each reminder (24h, 8h, 1h before) needs its own tag: iOS silently replaces a
+          // notification that shares a tag, so later same-task reminders were never seen.
+          tag: `reminder-${reminder.id}`,
           data: {
+            reminder_id: reminder.id,
             task_id: reminder.task_id,
             task_date: reminder.task_date,
-            url: reminder.task_date ? `/?date=${reminder.task_date}` : "/"
+            // Open today's plan; a "tomorrow" reminder used to open tomorrow with nothing for today.
+            url: "/?view=today"
           }
         }));
         reminderSent = true;
