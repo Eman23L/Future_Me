@@ -113,6 +113,11 @@ function plural(count: number, unit: string) {
 export function buildScheduledReminders(state: PlannerState, now = new Date()): ScheduledReminderPayload[] {
   const nowTime = now.getTime();
   const reminders: ScheduledReminderPayload[] = [];
+  // Recently used wording, so nearby reminders don't repeat the same main line or closing line.
+  const recentMainLines: string[] = [];
+  const recentEncouragements: string[] = [];
+  const isRecent = (copy: { mainLine: string; encouragement: string }) =>
+    recentMainLines.includes(copy.mainLine) || (copy.encouragement !== "" && recentEncouragements.includes(copy.encouragement));
 
   state.plannedTasks
     .filter(isUsableTask)
@@ -122,7 +127,7 @@ export function buildScheduledReminders(state: PlannerState, now = new Date()): 
       const addReminder = (kind: ReminderKind, scheduledFor: string) => {
         const reminderTime = new Date(scheduledFor).getTime();
         if (Number.isNaN(reminderTime) || reminderTime <= nowTime) return;
-        const copy = createNotificationCopy({
+        const copyInput = {
           notificationVibe: vibe,
           taskId: task.id,
           taskTitle: task.title,
@@ -132,7 +137,13 @@ export function buildScheduledReminders(state: PlannerState, now = new Date()): 
           scheduledFor,
           timeUntilTask: timingTextForReminderKind(kind),
           capacity: state.capacity
-        });
+        };
+        let copy = createNotificationCopy(copyInput);
+        for (let variant = 1; variant <= 12 && isRecent(copy); variant += 1) {
+          copy = createNotificationCopy({ ...copyInput, variant });
+        }
+        remember(recentMainLines, copy.mainLine, 20);
+        if (copy.encouragement) remember(recentEncouragements, copy.encouragement, 3);
         reminders.push({
           taskId: task.id,
           title: copy.title,
@@ -150,6 +161,11 @@ export function buildScheduledReminders(state: PlannerState, now = new Date()): 
     });
 
   return reminders;
+}
+
+function remember(list: string[], value: string, limit: number) {
+  list.push(value);
+  if (list.length > limit) list.splice(0, list.length - limit);
 }
 
 function reminderKindForTask(task: PlannedTask): ReminderKind {
