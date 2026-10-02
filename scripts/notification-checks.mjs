@@ -13,6 +13,20 @@ for (const vibe of vibes) {
   assert(counts[vibe].chores >= 6, `${vibe}: expected at least 6 chore variations`);
   assert(counts[vibe].selfCare >= 6, `${vibe}: expected at least 6 self-care variations`);
   assert(counts[vibe].focus >= 6, `${vibe}: expected at least 6 deadline/appointment variations`);
+  assert(counts[vibe].general >= 24 && counts[vibe].work >= 12 && counts[vibe].selfCare >= 12, `${vibe}: expected the expanded wording banks`);
+  assert(counts[vibe].encouragement >= 6, `${vibe}: expected at least 6 encouragement lines per energy level`);
+
+  // Reminders sent a day or 8 hours ahead must say when the task is.
+  for (const [timing, phrase] of [["24-hours-before", "tomorrow"], ["8-hours-before", "in about 8 hours"]]) {
+    for (let i = 0; i < 40; i += 1) {
+      const copy = createNotificationCopy({ notificationVibe: vibe, taskId: `t${i}`, taskTitle: "Gym routine", taskCategory: "gym", reminderType: timing, timing, capacity: "normal" });
+      assert(copy.body.includes(phrase), `${vibe}: ${timing} reminder should mention "${phrase}": ${copy.body}`);
+    }
+  }
+
+  // Encouragement follows the energy check.
+  const tiredCopies = Array.from({ length: 40 }, (_, i) => createNotificationCopy({ notificationVibe: vibe, taskId: `e${i}`, taskTitle: "Cleaning", taskCategory: "cleaning", reminderType: "x", timing: "1-hour-before", capacity: "tired" }));
+  assert(tiredCopies.some((copy) => copy.encouragement), `${vibe}: most reminders should include an encouraging line`);
 }
 
 const stableInput = {
@@ -75,6 +89,21 @@ const friendlyTimes = [
 ];
 for (const [minutes, expected] of friendlyTimes) {
   assert(formatTimeUntil(minutes) === expected, `formatTimeUntil(${minutes}) should be "${expected}", got "${formatTimeUntil(minutes)}"`);
+}
+
+// Across a month of reminders, wording should not repeat close together.
+{
+  const variety = createState();
+  variety.plannedTasks = Array.from({ length: 20 }, (_, day) => ({
+    id: `variety-gym-${day}`, sourceId: "routine-gym", sourceType: "routine", title: "Gym routine",
+    date: `2026-07-${String(day + 5).padStart(2, "0")}`, startTime: "10:00", endTime: "11:00",
+    category: "gym", effort: "high", lock: "flexible", priority: "medium", completed: false, missed: false
+  }));
+  const monthReminders = buildScheduledReminders(variety, new Date("2026-07-01T00:00:00"));
+  monthReminders.forEach((reminder, index) => {
+    const previous = monthReminders.slice(Math.max(0, index - 10), index).map((item) => item.body);
+    assert(!previous.includes(reminder.body), `reminder wording repeated within 10 reminders: ${reminder.body}`);
+  });
 }
 
 console.log("Notification checks passed.");

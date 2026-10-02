@@ -1,4 +1,5 @@
 import type { CapacityMode, Category, NotificationPersonality } from "../models/types";
+import { moreCopy } from "./notificationCopyMore.js";
 
 export type ReminderTiming =
   | "evening-before"
@@ -23,6 +24,8 @@ export type NotificationCopyInput = {
   scheduledFor?: string;
   timeUntilTask?: string;
   capacity?: CapacityMode;
+  // Changes the pick without changing the inputs; used to avoid repeating recent wording.
+  variant?: number;
 };
 
 type CopyGroup = "general" | "work" | "gym" | "chores" | "selfCare" | "focus";
@@ -35,20 +38,33 @@ type VariationBank = {
   chores: string[];
   selfCare: string[];
   focus: string[];
+  encouragement: Record<CapacityMode, string[]>;
 };
+
+// Reminders sent hours ahead only use lines that say when the task is ("tomorrow", "in about 8 hours").
+const FAR_AHEAD_TIMINGS = new Set<ReminderTiming>(["evening-before", "24-hours-before", "8-hours-before"]);
 
 type NotificationCopy = {
   title: string;
   body: string;
+  // The wording used, so callers can avoid repeating it in nearby reminders.
+  mainLine: string;
+  encouragement: string;
 };
 
 export function createNotificationCopy(input: NotificationCopyInput): NotificationCopy {
   const vibe = normalizeNotificationVibe(input.notificationVibe);
   const bank = copyBanks[vibe];
-  const seed = [vibe, input.taskId, input.taskTitle, input.taskCategory, input.reminderType, input.scheduledFor].filter(Boolean).join("|");
+  const seed = [vibe, input.taskId, input.taskTitle, input.taskCategory, input.reminderType, input.scheduledFor, input.variant ? `v${input.variant}` : ""].filter(Boolean).join("|");
   const group = copyGroupForCategory(input.taskCategory);
-  const bodyTemplate = choose([...bank[group], ...bank.general], `${seed}|body`);
+  const pool = [...bank[group], ...bank.general];
+  const timedPool = pool.filter((line) => line.includes("{timing}"));
+  const bodyPool = FAR_AHEAD_TIMINGS.has(input.timing) && timedPool.length >= 6 ? timedPool : pool;
+  const bodyTemplate = choose(bodyPool, `${seed}|body`);
   const titleTemplate = choose(bank.titles, `${seed}|title`);
+  // Most reminders end with a short encouraging line that matches the energy check.
+  const encouragementPool = bank.encouragement[input.capacity ?? "normal"] ?? bank.encouragement.normal;
+  const encouragement = hash(`${seed}|cheer?`) % 5 === 0 ? "" : choose(encouragementPool, `${seed}|cheer`);
   const context = {
     task: input.taskTitle,
     timing: timingPhrase(input.timing, input.timeUntilTask),
@@ -56,9 +72,12 @@ export function createNotificationCopy(input: NotificationCopyInput): Notificati
     capacity: capacityPhrase(input.capacity)
   };
 
+  const body = capitalizeSentences(applyTemplate(bodyTemplate, context));
   return {
     title: applyTemplate(titleTemplate, context),
-    body: applyTemplate(bodyTemplate, context)
+    body: encouragement && !body.includes(encouragement.replace(/[.!]+$/, "")) ? `${body} ${encouragement}` : body,
+    mainLine: bodyTemplate,
+    encouragement
   };
 }
 
@@ -90,7 +109,8 @@ export function getNotificationCopyVariationCounts() {
         gym: bank.gym.length,
         chores: bank.chores.length,
         selfCare: bank.selfCare.length,
-        focus: bank.focus.length
+        focus: bank.focus.length,
+        encouragement: Math.min(...Object.values(bank.encouragement).map((lines) => lines.length))
       }
     ])
   ) as Record<NotificationPersonality, Record<keyof VariationBank, number>>;
@@ -111,6 +131,10 @@ function hash(value: string) {
 
 function applyTemplate(template: string, context: Record<string, string>) {
   return template.replace(/\{(task|timing|prep|capacity)\}/g, (_, key: string) => context[key] ?? "");
+}
+
+function capitalizeSentences(text: string) {
+  return text.replace(/(^|[.!?]\s+)([a-z])/g, (_, before: string, letter: string) => before + letter.toUpperCase());
 }
 
 function copyGroupForCategory(category: Category): CopyGroup {
@@ -155,7 +179,7 @@ function capacityPhrase(capacity?: CapacityMode) {
   return "Keep it simple.";
 }
 
-const copyBanks: Record<NotificationPersonality, VariationBank> = {
+const baseCopyBanks: Record<NotificationPersonality, Omit<VariationBank, "encouragement">> = {
   bestie: {
     titles: ["FutureMe nudge", "Tiny nudge", "Next up", "For future you"],
     general: [
@@ -442,3 +466,20 @@ const copyBanks: Record<NotificationPersonality, VariationBank> = {
     ]
   }
 };
+
+const copyBanks = Object.fromEntries(
+  (Object.keys(baseCopyBanks) as NotificationPersonality[]).map((vibe) => {
+    const base = baseCopyBanks[vibe];
+    const more = moreCopy[vibe];
+    return [vibe, {
+      titles: [...base.titles, ...more.titles],
+      general: [...base.general, ...more.general],
+      work: [...base.work, ...more.work],
+      gym: [...base.gym, ...more.gym],
+      chores: [...base.chores, ...more.chores],
+      selfCare: [...base.selfCare, ...more.selfCare],
+      focus: [...base.focus, ...more.focus],
+      encouragement: more.encouragement
+    }];
+  })
+) as Record<NotificationPersonality, VariationBank>;
