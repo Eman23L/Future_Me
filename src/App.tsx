@@ -257,33 +257,52 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!authReady) return;
     let mounted = true;
 
-    async function validateNotificationSubscription() {
+    // Runs each time the app opens. If notification permission is still granted, quietly make sure this
+    // phone has a working push subscription and that the server has it, so reminders keep arriving
+    // without her tapping anything. Only a real permission change needs her to act.
+    async function ensureReminderConnection() {
       const wasEnabled = localStorage.getItem(NOTIFICATIONS_ENABLED_KEY) === "true";
-      if (!("Notification" in window) || !("serviceWorker" in navigator) || Notification.permission !== "granted") {
+      const markOff = () => {
         localStorage.removeItem(NOTIFICATIONS_ENABLED_KEY);
         localStorage.removeItem(PUSH_ENDPOINT_KEY);
         if (mounted) {
           setNotificationsEnabled(false);
           setPushEndpoint("");
         }
+      };
+
+      if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+        markOff();
+        return;
+      }
+      if (mounted) setNotificationStatus(Notification.permission);
+      if (Notification.permission !== "granted") {
+        markOff();
         return;
       }
 
       try {
-        const registration = await navigator.serviceWorker.getRegistration("/");
-        const subscription = await registration?.pushManager.getSubscription();
-        if (!subscription) {
-          localStorage.removeItem(NOTIFICATIONS_ENABLED_KEY);
-          localStorage.removeItem(PUSH_ENDPOINT_KEY);
-          if (mounted) {
-            setNotificationsEnabled(false);
-            setPushEndpoint("");
-            if (wasEnabled) setNotificationNotice("Your reminders were switched off on this phone. Tap Enable reminders to turn them back on.");
-          }
-          return;
-        }
+        const registration = (await navigator.serviceWorker.getRegistration("/")) ?? (await navigator.serviceWorker.register("/sw.js"));
+        const readyRegistration = await withTimeout(navigator.serviceWorker.ready.then((ready) => ready ?? registration), 10000);
+        const subscription = (await readyRegistration.pushManager.getSubscription())
+          ?? (await readyRegistration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(await getVapidPublicKey())
+          }));
+
+        const response = await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: getActiveUserId(),
+            userAgent: navigator.userAgent,
+            subscription: subscription.toJSON()
+          })
+        });
+        if (!response.ok) throw new Error(parseBackendError(await response.text()));
 
         localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, "true");
         localStorage.setItem(PUSH_ENDPOINT_KEY, subscription.endpoint);
@@ -291,18 +310,31 @@ export function App() {
           setNotificationsEnabled(true);
           setPushEndpoint(subscription.endpoint);
         }
-      } catch {
+      } catch (error) {
+        console.warn("[FutureMe reminders] Automatic reconnect failed.", error);
+        markOff();
         if (mounted && wasEnabled) {
-          setNotificationNotice("FutureMe couldn't check your reminders on this phone. Tap Enable reminders to switch them back on.");
+          setNotificationNotice("FutureMe couldn't reconnect your reminders just now. Tap Enable reminders to try again.");
         }
       }
     }
 
-    void validateNotificationSubscription();
+    void ensureReminderConnection();
     return () => {
       mounted = false;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, accountIdentity?.userId]);
+
+  // Once per app open, refresh the reminder schedule on the server so wording and timing fixes apply
+  // straight away and any earlier sync that failed is repaired.
+  const remindersRefreshedRef = useRef(false);
+  useEffect(() => {
+    if (remindersRefreshedRef.current || !notificationsEnabled || !state?.setupComplete) return;
+    remindersRefreshedRef.current = true;
+    void syncScheduledReminders(state);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notificationsEnabled, state]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -1257,6 +1289,8 @@ function DailyApp({
   const tasks = daySchedule(state, visibleDate);
   const dueToday = dueTodayItems(state, visibleDate);
   const nextTask = whatsNext.nextTask;
+  const [reminderBannerHidden, setReminderBannerHidden] = useState(false);
+  const remindersOff = !notificationsEnabled && notificationStatus !== "unsupported";
   return (
     <main className="mobile-shell dashboard">
       <header className="dashboard-top">
@@ -1268,6 +1302,21 @@ function DailyApp({
         </div>
         <InstallButton controls={installControls} filled />
       </header>
+
+      {remindersOff && !reminderBannerHidden && (
+        <section className="reminder-banner" role="status">
+          <strong>Your reminders are off</strong>
+          {notificationStatus === "denied" ? (
+            <span>To turn them back on, open your iPhone Settings, tap Notifications, choose FutureMe and switch on Allow Notifications.</span>
+          ) : (
+            <span>Turn them back on so FutureMe can nudge you before each activity.</span>
+          )}
+          <div className="reminder-banner-actions">
+            {notificationStatus !== "denied" && <button onClick={onRequestNotifications}>Turn on reminders</button>}
+            <button className="secondary-action" onClick={() => setReminderBannerHidden(true)}>Not now</button>
+          </div>
+        </section>
+      )}
 
       <section className="today-card">
         <p className="eyebrow">A note from FutureMe</p>
@@ -1895,6 +1944,16 @@ function isoWeekKey(date: string) {
 
 function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => { window.clearTimeout(timer); resolve(value); },
+      (error) => { window.clearTimeout(timer); reject(error); }
+    );
+  });
 }
 
 function isStandaloneMode() {

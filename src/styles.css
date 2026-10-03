@@ -1576,3 +1576,46 @@ body {
     transition: none;
   }
 }
+
+/* Banner on the Today page when reminders are switched off */
+.reminder-banner {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border: 1px solid rgba(216, 111, 144, 0.32);
+  border-radius: 28px;
+  background: linear-gradient(135deg, #fff1f5, #ffeede 60%, #f6ecff);
+  box-shadow: var(--lift-shadow);
+  color: var(--ink);
+}
+
+.reminder-banner strong {
+  font-family: var(--display);
+  font-size: 1.1rem;
+}
+
+.reminder-banner span {
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.45;
+}
+
+.reminder-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.reminder-banner-actions button {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.reminder-banner-actions button:not(.secondary-action) {
+  background: var(--button-gradient);
+  color: #fff;
+}
