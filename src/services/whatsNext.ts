@@ -136,7 +136,8 @@ export function buildScheduledReminders(state: PlannerState, now = new Date()): 
           timing: timingForReminderKind(kind),
           scheduledFor,
           timeUntilTask: timingTextForReminderKind(kind),
-          capacity: state.capacity
+          capacity: state.capacity,
+          taskTime: task.startTime
         };
         let copy = createNotificationCopy(copyInput);
         for (let variant = 1; variant <= 12 && isRecent(copy); variant += 1) {

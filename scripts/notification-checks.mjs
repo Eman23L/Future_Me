@@ -91,6 +91,19 @@ for (const [minutes, expected] of friendlyTimes) {
   assert(formatTimeUntil(minutes) === expected, `formatTimeUntil(${minutes}) should be "${expected}", got "${formatTimeUntil(minutes)}"`);
 }
 
+// Notification titles are an emoji only (iOS adds "from FutureMe"), and every reminder states the activity's time.
+for (const vibe of vibes) {
+  for (const capacity of ["high", "normal", "tired", "survival"]) {
+    for (let i = 0; i < 30; i += 1) {
+      for (const [timing, expected] of [["1-hour-before", "at 5:30pm, in about 1 hour"], ["8-hours-before", "at 5:30pm, in about 8 hours"], ["24-hours-before", "tomorrow at 5:30pm"]]) {
+        const copy = createNotificationCopy({ notificationVibe: vibe, taskId: `time-${i}`, taskTitle: "Meal prep", taskCategory: "meal-prep", reminderType: timing, timing, capacity, taskTime: "17:30" });
+        assert(copy.body.includes(expected), `${vibe}/${capacity}: ${timing} reminder should include "${expected}": ${copy.body}`);
+        assert(!/[A-Za-z]/.test(copy.title) && copy.title.length <= 4, `${vibe}/${capacity}: title should be a single emoji, got "${copy.title}"`);
+      }
+    }
+  }
+}
+
 // Across a month of reminders, wording should not repeat close together.
 {
   const variety = createState();

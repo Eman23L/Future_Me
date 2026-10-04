@@ -24,6 +24,8 @@ export type NotificationCopyInput = {
   scheduledFor?: string;
   timeUntilTask?: string;
   capacity?: CapacityMode;
+  // Start time of the activity ("HH:MM"), shown in the message, e.g. "at 5pm".
+  taskTime?: string;
   // Changes the pick without changing the inputs; used to avoid repeating recent wording.
   variant?: number;
 };
@@ -59,22 +61,25 @@ export function createNotificationCopy(input: NotificationCopyInput): Notificati
   const group = copyGroupForCategory(input.taskCategory);
   const pool = [...bank[group], ...bank.general];
   const timedPool = pool.filter((line) => line.includes("{timing}"));
-  const bodyPool = FAR_AHEAD_TIMINGS.has(input.timing) && timedPool.length >= 6 ? timedPool : pool;
+  // Scheduled reminders always say when the activity is, so they only use lines with {timing}.
+  const needsTiming = Boolean(input.taskTime) || FAR_AHEAD_TIMINGS.has(input.timing);
+  const bodyPool = needsTiming && timedPool.length >= 6 ? timedPool : pool;
   const bodyTemplate = choose(bodyPool, `${seed}|body`);
-  const titleTemplate = choose(bank.titles, `${seed}|title`);
+  // iOS already shows "from FutureMe" under the title, so the title is just an emoji matched to her energy check.
+  const titleEmoji = choose(energyEmoji[input.capacity ?? "normal"] ?? energyEmoji.normal, `${seed}|title`);
   // Most reminders end with a short encouraging line that matches the energy check.
   const encouragementPool = bank.encouragement[input.capacity ?? "normal"] ?? bank.encouragement.normal;
   const encouragement = hash(`${seed}|cheer?`) % 5 === 0 ? "" : choose(encouragementPool, `${seed}|cheer`);
   const context = {
     task: input.taskTitle,
-    timing: timingPhrase(input.timing, input.timeUntilTask),
+    timing: withTaskTime(input.timing, timingPhrase(input.timing, input.timeUntilTask), input.taskTime),
     prep: prepPhrase(input.taskCategory),
     capacity: capacityPhrase(input.capacity)
   };
 
   const body = capitalizeSentences(applyTemplate(bodyTemplate, context));
   return {
-    title: applyTemplate(titleTemplate, context),
+    title: titleEmoji,
     body: encouragement && !body.includes(encouragement.replace(/[.!]+$/, "")) ? `${body} ${encouragement}` : body,
     mainLine: bodyTemplate,
     encouragement
@@ -144,6 +149,35 @@ function copyGroupForCategory(category: Category): CopyGroup {
   if (category === "self-care" || category === "recovery") return "selfCare";
   if (category === "deadline" || category === "appointment" || category === "study") return "focus";
   return "general";
+}
+
+// Normal Apple emojis for the notification title, by energy check.
+const energyEmoji: Record<CapacityMode, string[]> = {
+  high: ["🔥", "💪", "✨", "🚀", "⚡️"],
+  normal: ["😊", "🌸", "☀️", "💫", "🌷"],
+  tired: ["😌", "🌙", "☁️", "🍵", "🫶"],
+  survival: ["🫶", "🤍", "🌱", "🧸", "🕯️"]
+};
+
+// "17:00" -> "5pm", "07:30" -> "7:30am".
+export function formatClockTime(time: string) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!match) return time;
+  const hours = Number(match[1]);
+  const minutes = match[2];
+  const suffix = hours < 12 ? "am" : "pm";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return minutes === "00" ? `${hour12}${suffix}` : `${hour12}:${minutes}${suffix}`;
+}
+
+// Adds the activity's clock time to the timing phrase: "tomorrow at 10am", "at 5pm, in about 1 hour".
+function withTaskTime(timing: ReminderTiming, phrase: string, taskTime?: string) {
+  if (!taskTime) return phrase;
+  const clock = formatClockTime(taskTime);
+  if (timing === "evening-before" || timing === "24-hours-before") return `tomorrow at ${clock}`;
+  if (timing === "morning-of") return `today at ${clock}`;
+  if (phrase.startsWith("in ")) return `at ${clock}, ${phrase}`;
+  return phrase;
 }
 
 function timingPhrase(timing: ReminderTiming, fallback = "soon") {
