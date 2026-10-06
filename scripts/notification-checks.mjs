@@ -1,5 +1,6 @@
 import { createNotificationCopy, getNotificationCopyVariationCounts } from "../build-src/services/notificationCopy.js";
 import { buildScheduledReminders, formatTimeUntil } from "../build-src/services/whatsNext.js";
+import { findDueCheckIn, checkInPrompt } from "../build-src/services/checkIn.js";
 import { reminderWindows, STALE_THRESHOLD_HOURS } from "../api/_lib/reminderWindows.js";
 
 const vibes = ["bestie", "gentle", "coach", "professional", "chaos"];
@@ -117,6 +118,24 @@ for (const vibe of vibes) {
   const atStart = startReminders.find((reminder) => reminder.scheduledFor === new Date("2026-07-10T09:00:00").toISOString());
   assert(atStart, "expected a reminder at the activity start time");
   assert(atStart.body.includes("starts now, at 9am"), `start reminder should say "starts now, at 9am": ${atStart.body}`);
+}
+
+// Check-in: asked only in the hour before an activity, once, and preferring the notification's task.
+{
+  const ci = createState();
+  const task = (id, startTime, extra = {}) => ({
+    id, sourceId: id, sourceType: "routine", title: id, date: "2026-07-10", startTime, endTime: "23:00",
+    category: "gym", effort: "high", lock: "flexible", priority: "medium", completed: false, missed: false, ...extra
+  });
+  ci.plannedTasks = [task("gym-9", "09:00"), task("shop-930", "09:30", { category: "food-shop" }), task("later", "11:00")];
+  const at = (time) => new Date(`2026-07-10T${time}:00`);
+  assert(findDueCheckIn(ci, {}, at("07:30")) === null, "no check-in more than an hour before");
+  assert(findDueCheckIn(ci, {}, at("08:20"))?.task.id === "gym-9", "check-in for the soonest activity within the hour");
+  assert(findDueCheckIn(ci, {}, at("08:40"), "shop-930")?.task.id === "shop-930", "the tapped notification's task comes first");
+  assert(findDueCheckIn(ci, { "gym-9": { answer: "no", at: "" } }, at("08:40"))?.task.id === "shop-930", "answered activities are not asked again");
+  assert(findDueCheckIn(ci, {}, at("09:05"))?.task.id === "shop-930", "activities that already started are skipped");
+  assert(findDueCheckIn({ ...ci, plannedTasks: [task("done", "09:00", { completed: true })] }, {}, at("08:30")) === null, "completed activities are skipped");
+  assert(checkInPrompt({ title: "Gym", category: "gym" }).question === "Have you packed your gym bag?", "gym asks about the bag");
 }
 
 // Across a month of reminders, wording should not repeat close together.

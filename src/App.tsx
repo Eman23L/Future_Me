@@ -5,6 +5,8 @@ import { PlannerService } from "./services/PlannerService";
 import { getBrowserSupabase, identityFromSession, resolveInitialAccount, type AccountIdentity } from "./services/auth";
 import { notificationMessage } from "./services/notificationCopy";
 import { buildScheduledReminders, getWhatsNext, type WhatsNextState } from "./services/whatsNext";
+import { checkInPrompt, checkInReply, findDueCheckIn, type CheckInAnswer, type CheckInRecords } from "./services/checkIn";
+import { formatClockTime } from "./services/notificationCopy";
 import type {
   CapacityMode,
   Category,
@@ -94,6 +96,7 @@ const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const USER_ID_KEY = "future-me:user-id";
 const NOTIFICATIONS_ENABLED_KEY = "future-me:notifications-enabled";
 const PUSH_ENDPOINT_KEY = "future-me:push-endpoint";
+const CHECK_INS_KEY = "future-me:check-ins";
 const emptyReminderDebug: ReminderDebugState = {
   permission: "unknown",
   serviceWorkerReady: false,
@@ -216,6 +219,11 @@ export function App() {
   const [showReminderDebug, setShowReminderDebug] = useState(false);
   const [scheduledReminderCount, setScheduledReminderCount] = useState<number | null>(null);
   const [pushEndpoint, setPushEndpoint] = useState(localStorage.getItem(PUSH_ENDPOINT_KEY) ?? "");
+  // Pre-activity check-in ("Have you packed your gym bag?"), asked once per activity in the hour before it.
+  const [checkIns, setCheckIns] = useState<CheckInRecords>(() => loadCheckIns());
+  const [preferredCheckInTask] = useState(() => new URLSearchParams(window.location.search).get("task"));
+  const [checkInResult, setCheckInResult] = useState<{ taskTitle: string; answer: CheckInAnswer; message: string; prep: string; minutesUntil: number } | null>(null);
+  const [clockTick, setClockTick] = useState(() => Date.now());
   const stepRef = useRef(step);
   const selectedDateRef = useRef(selectedDate);
   const lastHistoryStep = useRef<FlowStep | null>(null);
@@ -255,6 +263,40 @@ export function App() {
       authSubscription?.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const refresh = () => setClockTick(Date.now());
+    const interval = window.setInterval(refresh, 30_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+
+  const dueCheckIn = useMemo(
+    () => (state?.setupComplete ? findDueCheckIn(state, checkIns, new Date(clockTick), preferredCheckInTask) : null),
+    [state, checkIns, clockTick, preferredCheckInTask]
+  );
+
+  function answerCheckIn(answer: CheckInAnswer) {
+    if (!dueCheckIn || !state) return;
+    const { task, minutesUntil } = dueCheckIn;
+    const next = { ...checkIns, [task.id]: { answer, at: new Date().toISOString() } };
+    setCheckIns(next);
+    try {
+      localStorage.setItem(CHECK_INS_KEY, JSON.stringify(next));
+    } catch {
+      // Storage can fail in private mode; the answer still applies for this visit.
+    }
+    setCheckInResult({
+      taskTitle: task.title,
+      answer,
+      message: checkInReply(state.settings.notificationPersonality, answer, task.id),
+      prep: checkInPrompt(task).prep,
+      minutesUntil
+    });
+  }
 
   useEffect(() => {
     if (!authReady) return;
@@ -873,6 +915,17 @@ export function App() {
   if (!state) return <Loading message="FutureMe" />;
 
   const visibleDate = selectedDate ?? realToday;
+  const showCheckIn = step !== "loading" && step !== "generating" && (checkInResult !== null || dueCheckIn !== null);
+  const checkInLayer = showCheckIn ? (
+    <CheckInScreen
+      due={dueCheckIn}
+      result={checkInResult}
+      onAnswer={answerCheckIn}
+      onDone={() => setCheckInResult(null)}
+    />
+  ) : null;
+
+  const screen = (() => {
 
   if (state.setupComplete && step === "review") {
     const whatsNext = getWhatsNext(state);
@@ -902,6 +955,7 @@ export function App() {
         scheduledReminderCount={scheduledReminderCount}
         whatsNext={whatsNext}
         reminderDebugEnabled={isReminderDebugEnabled()}
+        checkIns={checkIns}
       >
         <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
         <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
@@ -958,6 +1012,14 @@ export function App() {
       <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
       <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
     </FlowShell>
+  );
+  })();
+
+  return (
+    <>
+      {screen}
+      {checkInLayer}
+    </>
   );
 }
 
@@ -1283,6 +1345,7 @@ function DailyApp({
   scheduledReminderCount,
   whatsNext,
   reminderDebugEnabled,
+  checkIns,
   children
 }: {
   state: PlannerState;
@@ -1309,6 +1372,7 @@ function DailyApp({
   scheduledReminderCount: number | null;
   whatsNext: WhatsNextState;
   reminderDebugEnabled: boolean;
+  checkIns: CheckInRecords;
   children?: React.ReactNode;
 }) {
   const tasks = daySchedule(state, visibleDate);
@@ -1407,6 +1471,7 @@ function DailyApp({
               <span>{scheduleTimeText(task)}</span>
               <small>{scheduleSourceLabel(task)} - {displayCategoryLabel(task)}</small>
               {task.timeWasDefaulted && <small>Time estimated</small>}
+              {checkIns[task.id]?.answer === "yes" && <small className="ready-chip">Ready ✓</small>}
             </div>
             {isCompletableTask(task) && <button onClick={() => onComplete(task)} disabled={task.completed}>{task.completed ? "Done" : "Complete"}</button>}
           </article>
@@ -1550,6 +1615,75 @@ function ReminderInstructionsModal({ open, onClose }: { open: boolean; onClose: 
       </section>
     </div>
   );
+}
+
+function CheckInScreen({
+  due,
+  result,
+  onAnswer,
+  onDone
+}: {
+  due: ReturnType<typeof findDueCheckIn> | null;
+  result: { taskTitle: string; answer: CheckInAnswer; message: string; prep: string; minutesUntil: number } | null;
+  onAnswer: (answer: CheckInAnswer) => void;
+  onDone: () => void;
+}) {
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
+  if (result) {
+    return (
+      <div className={`check-in-screen ${result.answer}`} role="dialog" aria-modal="true" aria-labelledby="check-in-title">
+        <div className="check-in-card">
+          <p className="check-in-emoji" aria-hidden="true">{result.answer === "yes" ? "🎉" : "💪"}</p>
+          <h1 id="check-in-title">{result.message}</h1>
+          {result.answer === "no" && (
+            <p className="check-in-detail">
+              You've still got {result.minutesUntil} {result.minutesUntil === 1 ? "minute" : "minutes"} before {result.taskTitle}. Start with {result.prep}.
+            </p>
+          )}
+          <button type="button" className="bottom-action" onClick={onDone}>
+            {result.answer === "yes" ? "Continue" : "I'll do it now"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!due) return null;
+  const { task, minutesUntil } = due;
+  const prompt = checkInPrompt(task);
+  return (
+    <div className="check-in-screen" role="dialog" aria-modal="true" aria-labelledby="check-in-title">
+      <div className="check-in-card">
+        <p className="eyebrow">Check-in</p>
+        <p className="check-in-when">
+          {task.title} at {formatClockTime(task.startTime)} · in {minutesUntil} {minutesUntil === 1 ? "minute" : "minutes"}
+        </p>
+        <h1 id="check-in-title">{prompt.question}</h1>
+        <p className="check-in-detail">Think {prompt.prep}.</p>
+        <div className="check-in-actions">
+          <button type="button" className="check-in-yes" onClick={() => onAnswer("yes")}>Yes</button>
+          <button type="button" className="check-in-no" onClick={() => onAnswer("no")}>No</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function loadCheckIns(): CheckInRecords {
+  try {
+    const raw = localStorage.getItem(CHECK_INS_KEY);
+    const parsed = raw ? JSON.parse(raw) as unknown : {};
+    return parsed && typeof parsed === "object" ? parsed as CheckInRecords : {};
+  } catch {
+    return {};
+  }
 }
 
 function ReminderDebugPanel({ debug }: { debug: ReminderDebugState }) {
