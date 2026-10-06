@@ -67,12 +67,12 @@ assert(reminders.every((reminder) => reminder.taskId !== "completed-gym"), "comp
 assert(reminders.some((reminder) => reminder.taskId === "active-gym"), "active upcoming tasks should get reminders");
 for (const taskId of ["active-gym", "active-meal"]) {
   const taskReminders = reminders.filter((reminder) => reminder.taskId === taskId);
-  assert(taskReminders.length === 3, `${taskId}: every upcoming activity should get exactly three reminders`);
+  assert(taskReminders.length === 4, `${taskId}: every upcoming activity should get exactly four reminders (24h, 8h, 1h, at start)`);
 }
 const gymStart = new Date("2026-07-04T10:00:00");
-const expectedGymTimes = [24, 8, 1].map((hours) => new Date(gymStart.getTime() - hours * 60 * 60 * 1000).toISOString());
+const expectedGymTimes = [24, 8, 1, 0].map((hours) => new Date(gymStart.getTime() - hours * 60 * 60 * 1000).toISOString());
 const actualGymTimes = reminders.filter((reminder) => reminder.taskId === "active-gym").map((reminder) => reminder.scheduledFor);
-assert(expectedGymTimes.every((time) => actualGymTimes.includes(time)), "activity reminders should be 24, 8, and 1 hour before");
+assert(expectedGymTimes.every((time) => actualGymTimes.includes(time)), "activity reminders should be 24, 8 and 1 hour before, and at the start time");
 assert(
   reminders.filter((reminder) => reminder.taskId === "active-gym").every((reminder) => reminder.taskDate === "2026-07-04"),
   "notification deep links should retain the activity date"
@@ -102,6 +102,21 @@ for (const vibe of vibes) {
       }
     }
   }
+}
+
+// Each activity gets a reminder at its start time as well as 24h, 8h and 1h before.
+{
+  const startState = createState();
+  startState.plannedTasks = [{
+    id: "start-gym", sourceId: "routine-gym", sourceType: "routine", title: "Gym routine",
+    date: "2026-07-10", startTime: "09:00", endTime: "10:00",
+    category: "gym", effort: "high", lock: "flexible", priority: "medium", completed: false, missed: false
+  }];
+  const startReminders = buildScheduledReminders(startState, new Date("2026-07-01T00:00:00"));
+  assert(startReminders.length === 4, `expected 4 reminders per activity, got ${startReminders.length}`);
+  const atStart = startReminders.find((reminder) => reminder.scheduledFor === new Date("2026-07-10T09:00:00").toISOString());
+  assert(atStart, "expected a reminder at the activity start time");
+  assert(atStart.body.includes("starts now, at 9am"), `start reminder should say "starts now, at 9am": ${atStart.body}`);
 }
 
 // Across a month of reminders, wording should not repeat close together.

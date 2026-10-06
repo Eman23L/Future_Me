@@ -30,6 +30,7 @@ export type ReminderKind =
   | "activity-24-hours"
   | "activity-8-hours"
   | "activity-1-hour"
+  | "activity-start"
   | "work-evening-before"
   | "work-one-hour"
   | "appointment-day-before"
@@ -159,6 +160,7 @@ export function buildScheduledReminders(state: PlannerState, now = new Date()): 
       addReminder("activity-24-hours", addMinutesToLocalDateTime(task.date, task.startTime, -24 * 60));
       addReminder("activity-8-hours", addMinutesToLocalDateTime(task.date, task.startTime, -8 * 60));
       addReminder("activity-1-hour", addMinutesToLocalDateTime(task.date, task.startTime, -60));
+      addReminder("activity-start", localDateTimeToIso(task.date, task.startTime));
     });
 
   return reminders;
@@ -185,6 +187,7 @@ function timingForReminderKind(kind: ReminderKind): ReminderTiming {
   if (kind === "activity-24-hours") return "24-hours-before";
   if (kind === "activity-8-hours") return "8-hours-before";
   if (kind === "activity-1-hour") return "1-hour-before";
+  if (kind === "activity-start") return "due-now";
   if (kind.includes("evening-before")) return "evening-before";
   if (kind.includes("day-before")) return "24-hours-before";
   if (kind.includes("two-hours")) return "2-hours-before";
