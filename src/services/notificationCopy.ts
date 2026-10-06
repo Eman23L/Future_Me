@@ -77,11 +77,15 @@ export function createNotificationCopy(input: NotificationCopyInput): Notificati
     capacity: capacityPhrase(input.capacity)
   };
 
-  const body = capitalizeSentences(applyTemplate(bodyTemplate, context));
+  // At the start time itself, keep it short and clear: "It's time! Gym starts now, at 9am."
+  const startLine = input.timing === "due-now" && input.taskTime
+    ? `${choose(startOpeners[vibe], `${seed}|start`)} ${input.taskTitle} starts now, at ${formatClockTime(input.taskTime)}.`
+    : "";
+  const body = startLine || capitalizeSentences(applyTemplate(bodyTemplate, context));
   return {
     title: titleEmoji,
     body: encouragement && !body.includes(encouragement.replace(/[.!]+$/, "")) ? `${body} ${encouragement}` : body,
-    mainLine: bodyTemplate,
+    mainLine: startLine || bodyTemplate,
     encouragement
   };
 }
@@ -150,6 +154,14 @@ function copyGroupForCategory(category: Category): CopyGroup {
   if (category === "deadline" || category === "appointment" || category === "study") return "focus";
   return "general";
 }
+
+const startOpeners: Record<NotificationPersonality, string[]> = {
+  bestie: ["It's time, love!", "Okay bestie, it's time!", "Showtime, gorgeous!", "Here we go, superstar!", "Time to shine, love!", "This is your moment, bestie!", "Let's do this, love!", "Go get it, gorgeous!"],
+  gentle: ["It's time.", "Here we go, softly.", "It's that time, lovely.", "Whenever you're ready, it's time.", "Take a breath. It's time.", "One calm step: it's time.", "It's time, at your own pace.", "Easy does it, it's time."],
+  coach: ["Go time.", "It's time. Let's go.", "Game time.", "Lock in. It's time.", "Showtime. Let's work.", "Time to execute.", "Clock's started.", "Here we go. Full focus."],
+  professional: ["It's time.", "Right on schedule.", "Your next activity is beginning.", "As planned:", "Time to begin.", "Your scheduled activity is here.", "Starting as planned:", "On time:"],
+  chaos: ["IT'S TIME!", "Klaxon! It's time!", "This is it!", "Main character entrance!", "Doors open, legend!", "The moment has arrived!", "Go go go!", "Plot twist: it's time!"]
+};
 
 // Normal Apple emojis for the notification title, by energy check.
 const energyEmoji: Record<CapacityMode, string[]> = {

@@ -326,13 +326,29 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, accountIdentity?.userId]);
 
-  // Once per app open, refresh the reminder schedule on the server so wording and timing fixes apply
-  // straight away and any earlier sync that failed is repaired.
-  const remindersRefreshedRef = useRef(false);
+  // Keep the server's reminder schedule in step with the plan. Any change to her tasks, voice or energy
+  // (adding a shift, a routine moving, ticking something off) re-syncs within a couple of seconds, and the
+  // first sync after the app opens also applies any wording or timing updates.
+  const lastReminderSync = useRef<{ signature: string; at: number }>({ signature: "", at: 0 });
+  const currentReminderSignature = state?.setupComplete ? reminderSignature(state) : "";
   useEffect(() => {
-    if (remindersRefreshedRef.current || !notificationsEnabled || !state?.setupComplete) return;
-    remindersRefreshedRef.current = true;
-    void syncScheduledReminders(state);
+    if (!notificationsEnabled || !state?.setupComplete || !currentReminderSignature) return;
+    if (currentReminderSignature === lastReminderSync.current.signature) return;
+    const timer = window.setTimeout(() => void syncScheduledReminders(state), 1500);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notificationsEnabled, currentReminderSignature]);
+
+  // When she comes back to the app after a while (it may have stayed open in the background for days),
+  // refresh the schedule so nothing is left stale.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || !notificationsEnabled || !state?.setupComplete) return;
+      if (Date.now() - lastReminderSync.current.at < 30 * 60_000) return;
+      void syncScheduledReminders(state);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notificationsEnabled, state]);
 
@@ -426,6 +442,12 @@ export function App() {
 
   async function update(next: PlannerState) {
     setState(next);
+    if (next.setupComplete) {
+      // Rebuild the plan straight away so new shifts or events move routines (and their reminders) now,
+      // not only at the end of the setup flow.
+      setState(await service.generate(next));
+      return;
+    }
     await service.save(next);
   }
 
@@ -798,6 +820,8 @@ export function App() {
 
   async function syncScheduledReminders(nextState: PlannerState) {
     if (!nextState.setupComplete) return true;
+    const signature = reminderSignature(nextState);
+    lastReminderSync.current = { signature, at: Date.now() };
 
     try {
       const response = await fetch("/api/reminders/sync", {
@@ -816,6 +840,7 @@ export function App() {
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown reminder sync error.";
+      lastReminderSync.current = { signature: "", at: 0 };
       setScheduledReminderCount(null);
       setNotificationNotice("Reminders are on, but FutureMe couldn't update them with your latest plan just now. Please check your internet connection and try again later.");
       setReminderDebug((current) => ({ ...current, backendError: message }));
@@ -1944,6 +1969,16 @@ function isoWeekKey(date: string) {
 
 function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+// Everything that changes which reminders exist or what they say.
+function reminderSignature(state: PlannerState) {
+  return JSON.stringify([
+    state.plannedMonth,
+    state.capacity,
+    state.settings.notificationPersonality,
+    state.plannedTasks.map((task) => [task.id, task.date, task.startTime, task.title, task.category, task.completed])
+  ]);
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
