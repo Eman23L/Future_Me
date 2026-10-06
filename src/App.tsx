@@ -1130,14 +1130,39 @@ function MonthSetupStep({
         <button onClick={() => onMonthChange(shiftMonth(state.plannedMonth, 1))} aria-label="Next month">&gt;</button>
       </div>
       <div className="category-grid">
-        {fixedCards.map((card) => (
-          <button key={card.id} className="category-card" onClick={() => onSelect(card.step)}>
-            <span className={`category-dot ${card.id}`} />
-            <strong>{card.title}</strong>
-            <span>{statusForCategory(state, card.id)}</span>
-            <small>{card.detail}</small>
-          </button>
-        ))}
+        {fixedCards.map((card) => {
+          const added = addedInputs(state, card.id);
+          return (
+            <div key={card.id} className="category-block">
+              <button className="category-card" onClick={() => onSelect(card.step)}>
+                <span className={`category-dot ${card.id}`} />
+                <strong>{card.title}</strong>
+                <span>{statusForCategory(state, card.id)}</span>
+                <small>{card.detail}</small>
+              </button>
+              {added.length > 0 && (
+                <ul className="added-list" aria-label={`${card.title} added`}>
+                  {added.map((input) => (
+                    <li key={input.id}>
+                      <span>{describeInput(input)}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Remove ${describeInput(input)}?`)) {
+                            onUpdate({ ...state, monthlyInputs: state.monthlyInputs.filter((item) => item.id !== input.id) });
+                          }
+                        }}
+                        aria-label={`Remove ${describeInput(input)}`}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
       </div>
       <div className="form-card two sleep-card">
         <label>Wake-up time<input type="time" value={state.settings.wakeTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, wakeTime: event.target.value } })} /></label>
@@ -2058,6 +2083,25 @@ function formatDateLong(date: string) {
 
 function formatWeekday(date: string) {
   return new Intl.DateTimeFormat("en-GB", { weekday: "long" }).format(new Date(`${date}T12:00:00`));
+}
+
+// Shifts and events already added for this month, soonest first, so a wrong one can be removed.
+function addedInputs(state: PlannerState, category: Category) {
+  return state.monthlyInputs
+    .filter((input) => input.category === category && isDateKey(input.date) && input.date.startsWith(state.plannedMonth))
+    .sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`));
+}
+
+// "Tue 7 Oct · 7:30am – 8:30pm", or "Thu 9 Oct · Dentist · 2pm" for named events.
+function describeInput(input: MonthlyInput) {
+  const day = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(`${input.date}T12:00:00`));
+  const time = input.timeWasDefaulted
+    ? "time not set"
+    : input.category === "work" && input.endTime
+      ? `${formatClockTime(input.startTime)} – ${formatClockTime(input.endTime)}`
+      : formatClockTime(input.startTime);
+  const name = input.category === "work" ? "" : `${input.title} · `;
+  return `${day} · ${name}${time}`;
 }
 
 function formatShortDate(date: string) {

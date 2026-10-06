@@ -1720,3 +1720,40 @@ body {
   color: #2e7d55;
   font-weight: 800;
 }
+
+/* Shifts and events already added on the month page, each removable */
+.category-block {
+  display: grid;
+  gap: 8px;
+}
+
+.added-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0 4px;
+  list-style: none;
+}
+
+.added-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 8px 8px 16px;
+  border: 1px solid rgba(214, 176, 186, 0.32);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.added-list button {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--rose-soft);
+  color: var(--rose-dark);
+  font-weight: 800;
+}
