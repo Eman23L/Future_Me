@@ -48,7 +48,7 @@ export async function sendDueReminders(supabase, userId = undefined) {
             task_id: reminder.task_id,
             task_date: reminder.task_date,
             // Open today's plan; a "tomorrow" reminder used to open tomorrow with nothing for today.
-            url: "/?view=today"
+            url: `/?view=today&task=${encodeURIComponent(reminder.task_id)}`
           }
         }));
         reminderSent = true;
