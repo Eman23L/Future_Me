@@ -230,7 +230,13 @@ function normalizeMonthlyInputs(value: unknown): PlannerState["monthlyInputs"] {
       fixed: Boolean(input.fixed),
       effort: isEffortLevel(input.effort) ? input.effort : "medium",
       priority: isPriority(input.priority) ? input.priority : "medium",
-      timeWasDefaulted: Boolean(input.timeWasDefaulted)
+      timeWasDefaulted: Boolean(input.timeWasDefaulted),
+      details: isRecord(input.details) ? {
+        location: typeof input.details.location === "string" ? input.details.location : undefined,
+        notes: typeof input.details.notes === "string" ? input.details.notes : undefined,
+        importance: typeof input.details.importance === "string" ? input.details.importance : undefined,
+        effort: typeof input.details.effort === "string" ? input.details.effort : undefined
+      } : undefined
     }));
 }
 

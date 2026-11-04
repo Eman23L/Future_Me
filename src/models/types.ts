@@ -40,6 +40,8 @@ export interface MonthlyInput {
   effort?: EffortLevel;
   priority?: PlanningPriority;
   timeWasDefaulted?: boolean;
+  // The form fields as she typed them, so the entry can be edited later.
+  details?: { location?: string; notes?: string; importance?: string; effort?: string };
 }
 
 export type RoutineFrequency =

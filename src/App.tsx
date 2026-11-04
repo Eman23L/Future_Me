@@ -203,6 +203,8 @@ export function App() {
   const [step, setStep] = useState<FlowStep>("start");
   const [workDraft, setWorkDraft] = useState<WorkDraft>({ startTime: "07:30", endTime: "20:30", dates: [] });
   const [fixedDraft, setFixedDraft] = useState<FixedDraft>(emptyFixedDraft(""));
+  // Set while editing an existing shift or event, so saving replaces it instead of adding another.
+  const [editingInputId, setEditingInputId] = useState<string | null>(null);
   const [flexibleConfigs, setFlexibleConfigs] = useState<FlexibleConfig[]>(defaultFlexibleConfigs);
   const [realToday, setRealToday] = useState(isoToday());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -554,7 +556,19 @@ export function App() {
 
   function openFixedFlow(nextStep: FlowStep) {
     setFixedDraft(emptyFixedDraft(state?.plannedMonth ?? isoToday().slice(0, 7)));
+    setEditingInputId(null);
     setStep(nextStep);
+  }
+
+  function editInput(input: MonthlyInput) {
+    setEditingInputId(input.id);
+    if (input.category === "work") {
+      setWorkDraft({ startTime: input.startTime, endTime: input.endTime ?? addMinutes(input.startTime, 60), dates: [input.date] });
+      setStep("work-time");
+      return;
+    }
+    setFixedDraft(draftFromInput(input));
+    setStep(input.category === "appointment" ? "appointment-details" : input.category === "deadline" ? "deadline-details" : "social-details");
   }
 
   function saveWorkDates() {
@@ -571,6 +585,14 @@ export function App() {
       priority: "essential" as const,
       notes: `${workDraft.startTime}-${workDraft.endTime} shift`
     }));
+    if (editingInputId) {
+      // Editing a shift: swap the original for the (possibly re-dated or re-timed) new one.
+      update({ ...state, monthlyInputs: [...state.monthlyInputs.filter((item) => item.id !== editingInputId), ...inputs] });
+      setEditingInputId(null);
+      setWorkDraft({ startTime: "07:30", endTime: "20:30", dates: [] });
+      setStep("month");
+      return;
+    }
     update({ ...state, monthlyInputs: [...state.monthlyInputs, ...inputs] });
     setWorkDraft({ ...workDraft, dates: [] });
     setStep("work-again");
@@ -597,7 +619,8 @@ export function App() {
         effort: effortFromLabel(fixedDraft.effort),
         priority: "essential",
         notes: `${fixedDraft.importance} importance. ${fixedDraft.effort} effort. ${timeWasDefaulted ? "Due time not set." : ""} ${fixedDraft.notes}`.trim(),
-        timeWasDefaulted
+        timeWasDefaulted,
+        details: { notes: fixedDraft.notes, importance: fixedDraft.importance, effort: fixedDraft.effort }
       }
       : {
         id: crypto.randomUUID(),
@@ -610,8 +633,17 @@ export function App() {
         effort: category === "appointment" ? "medium" : "low",
         priority: "essential",
         notes: [fixedDraft.location, timeWasDefaulted ? "Time estimated" : "", fixedDraft.notes].filter(Boolean).join(" - "),
-        timeWasDefaulted
+        timeWasDefaulted,
+        details: { location: fixedDraft.location, notes: fixedDraft.notes }
       };
+    if (editingInputId) {
+      // Editing: replace the original entry (keeping its id) and go straight back to the month page.
+      update({ ...state, monthlyInputs: state.monthlyInputs.map((item) => (item.id === editingInputId ? { ...input, id: editingInputId } : item)) });
+      setEditingInputId(null);
+      setFixedDraft(emptyFixedDraft(state.plannedMonth));
+      setStep("month");
+      return;
+    }
     update({ ...state, monthlyInputs: [...state.monthlyInputs, input] });
     setFixedDraft(emptyFixedDraft(state.plannedMonth));
     setStep(category === "appointment" ? "appointment-again" : category === "deadline" ? "deadline-again" : "social-again");
@@ -992,7 +1024,7 @@ export function App() {
     <FlowShell step={step} state={state} installControls={installControls} onBack={() => setStep(previousStep(step))} onHome={goHome}>
       {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} />}
       {step === "loading" && <FutureMeLoading />}
-      {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onNext={() => setStep("flexible")} />}
+      {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onEdit={editInput} onNext={() => setStep("flexible")} />}
       {step === "work-time" && <WorkTimeStep draft={workDraft} onDraftChange={setWorkDraft} onNext={() => setStep("work-dates")} />}
       {step === "work-dates" && <WorkDatesStep state={state} draft={workDraft} onDraftChange={setWorkDraft} onSave={saveWorkDates} />}
       {step === "work-again" && <AgainStep title="Do you have a different work pattern this month?" addLabel="Add another work pattern" doneLabel="Done with work" onAdd={() => { setWorkDraft({ startTime: "07:30", endTime: "20:30", dates: [] }); setStep("work-time"); }} onDone={() => setStep("month")} />}
@@ -1114,12 +1146,14 @@ function MonthSetupStep({
   onUpdate,
   onMonthChange,
   onSelect,
+  onEdit,
   onNext
 }: {
   state: PlannerState;
   onUpdate: (state: PlannerState) => void;
   onMonthChange: (monthKey: string) => void;
   onSelect: (step: FlowStep) => void;
+  onEdit: (input: MonthlyInput) => void;
   onNext: () => void;
 }) {
   return (
@@ -1145,6 +1179,9 @@ function MonthSetupStep({
                   {added.map((input) => (
                     <li key={input.id}>
                       <span>{describeInput(input)}</span>
+                      <button type="button" onClick={() => onEdit(input)} aria-label={`Edit ${describeInput(input)}`}>
+                        Edit
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -1886,6 +1923,40 @@ function isCompletableTask(task: PlannedTask) {
   if (task.sourceType === "sleep") return false;
   if (task.category === "deadline" || task.category === "appointment" || task.category === "social") return false;
   return task.sourceType === "routine" || task.sourceType === "prep" || task.category === "study" || task.category === "work";
+}
+
+// Fill the add/edit form from a saved entry. Older entries only kept a combined notes string,
+// so their fields are recovered from it as well as possible.
+function draftFromInput(input: MonthlyInput): FixedDraft {
+  const base = emptyFixedDraft(input.date.slice(0, 7));
+  const time = input.timeWasDefaulted ? { startTime: "", endTime: "" } : { startTime: input.startTime, endTime: input.endTime ?? "" };
+  if (input.details) {
+    return {
+      ...base,
+      ...time,
+      title: input.title,
+      date: input.date,
+      location: input.details.location ?? "",
+      notes: input.details.notes ?? "",
+      importance: input.details.importance ?? base.importance,
+      effort: input.details.effort ?? base.effort
+    };
+  }
+  const raw = input.notes ?? "";
+  if (input.category === "deadline") {
+    const match = /^(\w+) importance\. (\w+) effort\.\s*(?:Due time not set\.)?\s*(.*)$/s.exec(raw);
+    return {
+      ...base,
+      ...time,
+      title: input.title,
+      date: input.date,
+      importance: match?.[1] ?? base.importance,
+      effort: match?.[2] ?? base.effort,
+      notes: match ? match[3].trim() : raw
+    };
+  }
+  const parts = raw.split(" - ").filter((part) => part && part !== "Time estimated");
+  return { ...base, ...time, title: input.title, date: input.date, location: parts[0] ?? "", notes: parts.slice(1).join(" - ") };
 }
 
 function emptyFixedDraft(month: string): FixedDraft {
