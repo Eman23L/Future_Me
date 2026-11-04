@@ -1013,6 +1013,7 @@ export function App() {
           setStep("review");
         }}
         onWeeklyCheck={() => setStep("capacity")}
+        onAddToMonth={() => setStep("month")}
       >
         <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
         <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
@@ -1021,10 +1022,10 @@ export function App() {
   }
 
   return (
-    <FlowShell step={step} state={state} installControls={installControls} onBack={() => setStep(previousStep(step))} onHome={goHome}>
+    <FlowShell step={step} state={state} installControls={installControls} onBack={() => setStep(state.setupComplete && step === "month" ? "calendar" : previousStep(step))} onHome={goHome}>
       {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} />}
       {step === "loading" && <FutureMeLoading />}
-      {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onEdit={editInput} onNext={() => setStep("flexible")} />}
+      {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onEdit={editInput} onNext={() => setStep(state.setupComplete ? "calendar" : "flexible")} />}
       {step === "work-time" && <WorkTimeStep draft={workDraft} onDraftChange={setWorkDraft} onNext={() => setStep("work-dates")} />}
       {step === "work-dates" && <WorkDatesStep state={state} draft={workDraft} onDraftChange={setWorkDraft} onSave={saveWorkDates} />}
       {step === "work-again" && <AgainStep title="Do you have a different work pattern this month?" addLabel="Add another work pattern" doneLabel="Done with work" onAdd={() => { setWorkDraft({ startTime: "07:30", endTime: "20:30", dates: [] }); setStep("work-time"); }} onDone={() => setStep("month")} />}
@@ -1157,7 +1158,11 @@ function MonthSetupStep({
   onNext: () => void;
 }) {
   return (
-    <StepCard eyebrow="Your first month" title="Let's build your first month" copy="Add what is already fixed. I will gently work around it.">
+    <StepCard
+      eyebrow={state.setupComplete ? "Your month" : "Your first month"}
+      title={state.setupComplete ? "Add to your month" : "Let's build your first month"}
+      copy={state.setupComplete ? "Add anything new, or tap Edit to change something. I will fit everything else around it." : "Add what is already fixed. I will gently work around it."}
+    >
       <div className="month-picker">
         <button onClick={() => onMonthChange(shiftMonth(state.plannedMonth, -1))} aria-label="Previous month">&lt;</button>
         <strong>{monthLabel(state.plannedMonth)}</strong>
@@ -1205,7 +1210,7 @@ function MonthSetupStep({
         <label>Wake-up time<input type="time" value={state.settings.wakeTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, wakeTime: event.target.value } })} /></label>
         <label>Bedtime<input type="time" value={state.settings.bedTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, bedTime: event.target.value } })} /></label>
       </div>
-      <button className="bottom-action" onClick={onNext}>Continue</button>
+      <button className="bottom-action" onClick={onNext}>{state.setupComplete ? "Done, back to my month" : "Continue"}</button>
     </StepCard>
   );
 }
@@ -1561,6 +1566,7 @@ function MonthCalendarApp({
   onSelectDate,
   onToday,
   onWeeklyCheck,
+  onAddToMonth,
   children
 }: {
   state: PlannerState;
@@ -1572,6 +1578,7 @@ function MonthCalendarApp({
   onSelectDate: (date: string) => void;
   onToday: () => void;
   onWeeklyCheck: () => void;
+  onAddToMonth: () => void;
   children?: React.ReactNode;
 }) {
   const days = monthDays(state.plannedMonth);
@@ -1592,6 +1599,8 @@ function MonthCalendarApp({
         <strong>{monthLabel(state.plannedMonth)}</strong>
         <button onClick={() => onMonthChange(shiftMonth(state.plannedMonth, 1))} aria-label="Next month">&gt;</button>
       </section>
+
+      <button className="secondary-action add-to-month" onClick={onAddToMonth}>+ Add or change plans</button>
 
       <section className="task-section month-overview">
         <div className="month-calendar-grid">
