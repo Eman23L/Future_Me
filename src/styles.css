@@ -487,6 +487,14 @@ textarea {
   box-shadow: 0 10px 24px rgba(116, 75, 88, 0.07);
 }
 
+.add-to-month {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 14px;
+  border-radius: 999px;
+  font-weight: 900;
+}
+
 .month-picker {
   display: grid;
   grid-template-columns: 58px 1fr 58px;
