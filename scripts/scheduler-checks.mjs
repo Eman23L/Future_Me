@@ -73,6 +73,20 @@ for (const capacity of capacities) {
   assert(reloaded.plannedTasks.length === state.plannedTasks.length, "reload should keep every planned task, including past ones");
 }
 
+// Her own gym workouts are taken in turn across the month's gym sessions.
+{
+  const state = createState("high");
+  state.routines = state.routines.map((item) => item.category === "gym" ? { ...item, options: ["Legs", "Upper body", "Cardio"] } : item);
+  const gym = generateMonthlyPlan(state).tasks.filter((task) => task.category === "gym" && task.sourceType === "routine");
+  assert(gym.length >= 3, "fixture should place several gym sessions");
+  gym.forEach((task, index) => {
+    const expectedTitle = `Gym · ${["Legs", "Upper body", "Cardio"][index % 3]}`;
+    assert(task.title === expectedTitle, `gym session ${index} should be "${expectedTitle}", got "${task.title}"`);
+  });
+  const plain = generateMonthlyPlan(createState("high")).tasks.filter((task) => task.category === "gym" && task.sourceType === "routine");
+  assert(plain.every((task) => !task.title.includes("·")), "without workouts, gym titles stay as before");
+}
+
 console.log("Scheduler checks passed.");
 
 function createState(capacity) {

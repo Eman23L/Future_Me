@@ -73,6 +73,7 @@ export function generateMonthlyPlan(state: PlannerState): GeneratedSchedule {
   addRecoveryBlocks(state, planned, explanations, monthCursor, days, planningRange);
   addMealPrepBeforeWorkHeavyDays(state, planned, explanations, planningRange);
   placeFlexibleTasks(state, flexibleTasks, planned, explanations, planningRange);
+  rotateRoutineOptions(state, planned);
 
   explanations.unshift({
     id: "monthly-fixed-baseline",
@@ -335,6 +336,24 @@ function addMealPrepBeforeWorkHeavyDays(
       message: "Meal prep was added before a work day so the fixed shift stays easier to manage."
     });
   });
+}
+
+// Give each session of a routine one of her own options in turn (e.g. Legs, Upper body, Cardio),
+// in date order, so the same workout isn't repeated back to back.
+function rotateRoutineOptions(state: PlannerState, planned: PlannedTask[]) {
+  state.routines
+    .filter((routine) => routine.active)
+    .forEach((routine) => {
+      const options = (routine.options ?? []).map((option) => option.trim()).filter(Boolean);
+      if (options.length === 0) return;
+      const label = routine.category === "gym" ? "Gym" : routine.name;
+      planned
+        .filter((task) => task.sourceType === "routine" && task.sourceId === routine.id)
+        .sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`))
+        .forEach((task, index) => {
+          task.title = `${label} · ${options[index % options.length]}`;
+        });
+    });
 }
 
 function placeFlexibleTasks(
