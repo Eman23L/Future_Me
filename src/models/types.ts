@@ -65,6 +65,8 @@ export interface Routine {
   priority?: PlanningPriority;
   // Her own variations (e.g. gym workouts like "Legs" or "Upper body"), rotated across the sessions.
   options?: string[];
+  // What she does in each option (e.g. the exercises for "Day A: Glutes and legs"), keyed by option name.
+  optionNotes?: Record<string, string>;
 }
 
 export type PresetRule =

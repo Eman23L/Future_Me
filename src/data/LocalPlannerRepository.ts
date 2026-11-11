@@ -258,6 +258,9 @@ function normalizeRoutines(value: unknown): Routine[] {
       priority: isPriority(routine.priority) ? routine.priority : "medium",
       options: Array.isArray(routine.options)
         ? routine.options.filter((option): option is string => typeof option === "string" && option.trim().length > 0)
+        : undefined,
+      optionNotes: routine.optionNotes && typeof routine.optionNotes === "object"
+        ? Object.fromEntries(Object.entries(routine.optionNotes).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
         : undefined
     }));
 }
