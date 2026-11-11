@@ -63,6 +63,8 @@ export interface Routine {
   active: boolean;
   durationMinutes?: number;
   priority?: PlanningPriority;
+  // Her own variations (e.g. gym workouts like "Legs" or "Upper body"), rotated across the sessions.
+  options?: string[];
 }
 
 export type PresetRule =

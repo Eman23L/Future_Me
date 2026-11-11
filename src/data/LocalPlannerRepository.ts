@@ -255,7 +255,10 @@ function normalizeRoutines(value: unknown): Routine[] {
       category: routine.category as Category,
       active: routine.active !== false,
       durationMinutes: isPositiveNumber(routine.durationMinutes) ? routine.durationMinutes : 60,
-      priority: isPriority(routine.priority) ? routine.priority : "medium"
+      priority: isPriority(routine.priority) ? routine.priority : "medium",
+      options: Array.isArray(routine.options)
+        ? routine.options.filter((option): option is string => typeof option === "string" && option.trim().length > 0)
+        : undefined
     }));
 }
 

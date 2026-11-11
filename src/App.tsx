@@ -89,6 +89,7 @@ type FlexibleConfig = {
   preferredDay: number;
   preferredTime: string;
   priority: Routine["priority"];
+  options?: string[];
 };
 
 const setupSteps: FlowStep[] = ["start", "loading", "month", "flexible", "capacity", "personality", "generating", "review"];
@@ -665,10 +666,12 @@ export function App() {
         category: config.id,
         active: true,
         durationMinutes: config.durationMinutes,
-        priority: config.priority
+        priority: config.priority,
+        options: config.options?.length ? config.options : undefined
       }));
     await update({ ...state, routines: [...preserved, ...routines] });
-    setStep("capacity");
+    // Once her month exists, changing routines goes straight back to it.
+    setStep(state.setupComplete ? "calendar" : "capacity");
   }
 
   async function completeSetup() {
@@ -1025,7 +1028,7 @@ export function App() {
     <FlowShell step={step} state={state} installControls={installControls} onBack={() => setStep(state.setupComplete && step === "month" ? "calendar" : previousStep(step))} onHome={goHome}>
       {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} />}
       {step === "loading" && <FutureMeLoading />}
-      {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onEdit={editInput} onNext={() => setStep(state.setupComplete ? "calendar" : "flexible")} />}
+      {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onEdit={editInput} onRoutines={() => setStep("flexible")} onNext={() => setStep(state.setupComplete ? "calendar" : "flexible")} />}
       {step === "work-time" && <WorkTimeStep draft={workDraft} onDraftChange={setWorkDraft} onNext={() => setStep("work-dates")} />}
       {step === "work-dates" && <WorkDatesStep state={state} draft={workDraft} onDraftChange={setWorkDraft} onSave={saveWorkDates} />}
       {step === "work-again" && <AgainStep title="Do you have a different work pattern this month?" addLabel="Add another work pattern" doneLabel="Done with work" onAdd={() => { setWorkDraft({ startTime: "07:30", endTime: "20:30", dates: [] }); setStep("work-time"); }} onDone={() => setStep("month")} />}
@@ -1038,7 +1041,7 @@ export function App() {
       {step === "social-details" && <FixedDetailsStep kind="social" draft={fixedDraft} onDraftChange={setFixedDraft} onNext={() => setStep("social-date")} />}
       {step === "social-date" && <SingleDateStep state={state} heading="Which day is this social event?" draft={fixedDraft} onDraftChange={setFixedDraft} onSave={() => saveFixedEvent("social")} />}
       {step === "social-again" && <AgainStep title="Do you have another social event to add?" addLabel="Add another social event" doneLabel="Done with social events" onAdd={() => setStep("social-details")} onDone={() => setStep("month")} />}
-      {step === "flexible" && <FlexibleActivitiesStep configs={flexibleConfigs} onChange={setFlexibleConfigs} onNext={saveFlexibleAndContinue} />}
+      {step === "flexible" && <FlexibleActivitiesStep configs={flexibleConfigs} onChange={setFlexibleConfigs} onNext={saveFlexibleAndContinue} nextLabel={state.setupComplete ? "Save, back to my month" : "Continue"} />}
       {step === "capacity" && <CapacityStep state={state} onUpdate={update} onNext={state.setupComplete ? completeWeeklyCapacityCheck : () => setStep("personality")} />}
       {step === "personality" && <PersonalityStep state={state} onUpdate={update} onNext={completeSetup} />}
       {step === "generating" && <GenerateStep />}
@@ -1148,6 +1151,7 @@ function MonthSetupStep({
   onMonthChange,
   onSelect,
   onEdit,
+  onRoutines,
   onNext
 }: {
   state: PlannerState;
@@ -1155,6 +1159,7 @@ function MonthSetupStep({
   onMonthChange: (monthKey: string) => void;
   onSelect: (step: FlowStep) => void;
   onEdit: (input: MonthlyInput) => void;
+  onRoutines: () => void;
   onNext: () => void;
 }) {
   return (
@@ -1210,6 +1215,9 @@ function MonthSetupStep({
         <label>Wake-up time<input type="time" value={state.settings.wakeTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, wakeTime: event.target.value } })} /></label>
         <label>Bedtime<input type="time" value={state.settings.bedTime} onChange={(event) => onUpdate({ ...state, settings: { ...state.settings, bedTime: event.target.value } })} /></label>
       </div>
+      {state.setupComplete && (
+        <button className="secondary-action routines-link" onClick={onRoutines}>Change routines and workouts</button>
+      )}
       <button className="bottom-action" onClick={onNext}>{state.setupComplete ? "Done, back to my month" : "Continue"}</button>
     </StepCard>
   );
@@ -1320,7 +1328,7 @@ function AgainStep({
   );
 }
 
-function FlexibleActivitiesStep({ configs, onChange, onNext }: { configs: FlexibleConfig[]; onChange: (configs: FlexibleConfig[]) => void; onNext: () => void }) {
+function FlexibleActivitiesStep({ configs, onChange, onNext, nextLabel }: { configs: FlexibleConfig[]; onChange: (configs: FlexibleConfig[]) => void; onNext: () => void; nextLabel: string }) {
   function patch(id: Category, patchConfig: Partial<FlexibleConfig>) {
     onChange(configs.map((config) => config.id === id ? { ...config, ...patchConfig } : config));
   }
@@ -1345,13 +1353,46 @@ function FlexibleActivitiesStep({ configs, onChange, onNext }: { configs: Flexib
                   ))}
                 </div>
                 <p className="capacity-helper">I'll decide how often to fit this in based on how much energy you have each week.</p>
+                {config.id === "gym" && (
+                  <WorkoutOptions options={config.options ?? []} onChange={(options) => patch(config.id, { options })} />
+                )}
               </>
             )}
           </article>
         ))}
       </div>
-      <button className="bottom-action" onClick={onNext}>Continue</button>
+      <button className="bottom-action" onClick={onNext}>{nextLabel}</button>
     </StepCard>
+  );
+}
+
+function WorkoutOptions({ options, onChange }: { options: string[]; onChange: (options: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  function add() {
+    const name = draft.trim();
+    if (!name) return;
+    if (!options.some((option) => option.toLowerCase() === name.toLowerCase())) onChange([...options, name]);
+    setDraft("");
+  }
+  return (
+    <div className="workout-options">
+      <strong>Your workouts</strong>
+      <small>Add the workouts you do and I'll take turns with them across your gym days.</small>
+      {options.length > 0 && (
+        <ul className="added-list" aria-label="Your workouts">
+          {options.map((option) => (
+            <li key={option}>
+              <span>{option}</span>
+              <button type="button" onClick={() => onChange(options.filter((item) => item !== option))} aria-label={`Remove ${option}`}>Remove</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="workout-add" onSubmit={(event) => { event.preventDefault(); add(); }}>
+        <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="e.g. Legs or Cardio" aria-label="Workout name" maxLength={40} />
+        <button type="submit" disabled={!draft.trim()}>Add</button>
+      </form>
+    </div>
   );
 }
 
@@ -1614,7 +1655,7 @@ function MonthCalendarApp({
               <span className="month-day-number">{Number(date.slice(8))}</span>
               <span className="month-day-items">
                 {tasksForCalendarDay(state, date).slice(0, 3).map((task) => (
-                  <span key={task.id} className={`month-task-chip ${task.category}`}>{task.title}</span>
+                  <span key={task.id} className={`month-task-chip ${task.category}`}>{task.title.split(" · ").pop()}</span>
                 ))}
                 {tasksForCalendarDay(state, date).length > 3 && <span className="month-more">...</span>}
               </span>
@@ -1809,7 +1850,8 @@ function configsFromRoutines(routines: Routine[]) {
         preferredDay: routine.preferredDay,
         preferredTime: routine.preferredTime,
         effort: routine.effort,
-        priority: routine.priority ?? config.priority
+        priority: routine.priority ?? config.priority,
+        options: routine.options
       }
       : config;
   });
