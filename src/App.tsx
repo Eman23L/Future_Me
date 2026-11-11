@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { LocalPlannerRepository } from "./data/LocalPlannerRepository";
 import { createSeedState } from "./data/seed";
@@ -90,6 +91,7 @@ type FlexibleConfig = {
   preferredTime: string;
   priority: Routine["priority"];
   options?: string[];
+  optionNotes?: Record<string, string>;
 };
 
 const setupSteps: FlowStep[] = ["start", "loading", "month", "flexible", "capacity", "personality", "generating", "review"];
@@ -667,7 +669,8 @@ export function App() {
         active: true,
         durationMinutes: config.durationMinutes,
         priority: config.priority,
-        options: config.options?.length ? config.options : undefined
+        options: config.options?.length ? config.options : undefined,
+        optionNotes: config.options?.length && config.optionNotes && Object.keys(config.optionNotes).length ? config.optionNotes : undefined
       }));
     await update({ ...state, routines: [...preserved, ...routines] });
     // Once her month exists, changing routines goes straight back to it.
@@ -1354,7 +1357,7 @@ function FlexibleActivitiesStep({ configs, onChange, onNext, nextLabel }: { conf
                 </div>
                 <p className="capacity-helper">I'll decide how often to fit this in based on how much energy you have each week.</p>
                 {config.id === "gym" && (
-                  <WorkoutOptions options={config.options ?? []} onChange={(options) => patch(config.id, { options })} />
+                  <WorkoutOptions options={config.options ?? []} notes={config.optionNotes ?? {}} onChange={(options, optionNotes) => patch(config.id, { options, optionNotes })} />
                 )}
               </>
             )}
@@ -1366,32 +1369,102 @@ function FlexibleActivitiesStep({ configs, onChange, onNext, nextLabel }: { conf
   );
 }
 
-function WorkoutOptions({ options, onChange }: { options: string[]; onChange: (options: string[]) => void }) {
-  const [draft, setDraft] = useState("");
-  function add() {
-    const name = draft.trim();
+type WorkoutDraft = { index: number | null; name: string; notes: string };
+
+function WorkoutOptions({
+  options,
+  notes,
+  onChange
+}: {
+  options: string[];
+  notes: Record<string, string>;
+  onChange: (options: string[], notes: Record<string, string>) => void;
+}) {
+  const [draft, setDraft] = useState<WorkoutDraft | null>(null);
+
+  function save() {
+    if (!draft) return;
+    const name = draft.name.trim();
     if (!name) return;
-    if (!options.some((option) => option.toLowerCase() === name.toLowerCase())) onChange([...options, name]);
-    setDraft("");
+    const clash = options.findIndex((option, index) => index !== draft.index && option.toLowerCase() === name.toLowerCase());
+    const nextOptions = [...options];
+    const nextNotes = { ...notes };
+    if (draft.index !== null) {
+      delete nextNotes[options[draft.index]];
+      if (clash === -1) nextOptions[draft.index] = name;
+      else nextOptions.splice(draft.index, 1);
+    } else if (clash === -1) {
+      nextOptions.push(name);
+    }
+    const details = draft.notes.trim();
+    if (details) nextNotes[name] = details;
+    else delete nextNotes[name];
+    onChange(nextOptions, nextNotes);
+    setDraft(null);
   }
+
+  function remove(option: string) {
+    const nextNotes = { ...notes };
+    delete nextNotes[option];
+    onChange(options.filter((item) => item !== option), nextNotes);
+  }
+
   return (
     <div className="workout-options">
       <strong>Your workouts</strong>
       <small>Add the workouts you do and I'll take turns with them across your gym days.</small>
       {options.length > 0 && (
-        <ul className="added-list" aria-label="Your workouts">
-          {options.map((option) => (
+        <ul className="added-list workout-list" aria-label="Your workouts">
+          {options.map((option, index) => (
             <li key={option}>
-              <span>{option}</span>
-              <button type="button" onClick={() => onChange(options.filter((item) => item !== option))} aria-label={`Remove ${option}`}>Remove</button>
+              <span>
+                {option}
+                {notes[option] && <small>{notes[option].split("\n").filter((line) => line.trim()).length} exercises</small>}
+              </span>
+              <button type="button" onClick={() => setDraft({ index, name: option, notes: notes[option] ?? "" })} aria-label={`Edit ${option}`}>Edit</button>
+              <button type="button" onClick={() => remove(option)} aria-label={`Remove ${option}`}>Remove</button>
             </li>
           ))}
         </ul>
       )}
-      <form className="workout-add" onSubmit={(event) => { event.preventDefault(); add(); }}>
-        <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="e.g. Legs or Cardio" aria-label="Workout name" maxLength={40} />
-        <button type="submit" disabled={!draft.trim()}>Add</button>
-      </form>
+      <button type="button" className="workout-add-button" onClick={() => setDraft({ index: null, name: "", notes: "" })}>+ Add a workout</button>
+      {draft && createPortal(
+        <div className="workout-sheet-backdrop" role="presentation">
+          <form
+            className="workout-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="workout-sheet-title"
+            onSubmit={(event) => { event.preventDefault(); save(); }}
+          >
+            <h2 id="workout-sheet-title">{draft.index === null ? "Add a workout" : "Edit workout"}</h2>
+            <label>
+              Workout name
+              <input
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                placeholder="e.g. Day A: Glutes and legs"
+                maxLength={60}
+                autoFocus
+              />
+            </label>
+            <label>
+              Exercises optional
+              <textarea
+                value={draft.notes}
+                onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+                placeholder={"One per line, e.g.\nHip thrusts 3 × 8-12\nBulgarian split squats 3 × 8-10 each leg\nPlank 3 × 30-45 sec"}
+                rows={8}
+              />
+            </label>
+            <div className="workout-sheet-actions">
+              <button type="button" className="secondary-action" onClick={() => setDraft(null)}>Cancel</button>
+              <button type="submit" className="bottom-action" disabled={!draft.name.trim()}>Save workout</button>
+            </div>
+          </form>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -1579,6 +1652,9 @@ function DailyApp({
               <span>{scheduleTimeText(task)}</span>
               <small>{scheduleSourceLabel(task)} - {displayCategoryLabel(task)}</small>
               {task.timeWasDefaulted && <small>Time estimated</small>}
+              {task.sourceType === "routine" && task.category === "gym" && task.notes && task.notes !== "Placed by weekly rules engine" && (
+                <small className="workout-notes">{task.notes}</small>
+              )}
               {checkIns[task.id]?.answer === "yes" && <small className="ready-chip">Ready ✓</small>}
             </div>
             {isCompletableTask(task) && <button onClick={() => onComplete(task)} disabled={task.completed}>{task.completed ? "Done" : "Complete"}</button>}
@@ -1851,7 +1927,8 @@ function configsFromRoutines(routines: Routine[]) {
         preferredTime: routine.preferredTime,
         effort: routine.effort,
         priority: routine.priority ?? config.priority,
-        options: routine.options
+        options: routine.options,
+        optionNotes: routine.optionNotes
       }
       : config;
   });

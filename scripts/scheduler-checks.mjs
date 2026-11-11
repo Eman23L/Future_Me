@@ -83,6 +83,11 @@ for (const capacity of capacities) {
     const expectedTitle = `Gym · ${["Legs", "Upper body", "Cardio"][index % 3]}`;
     assert(task.title === expectedTitle, `gym session ${index} should be "${expectedTitle}", got "${task.title}"`);
   });
+  const withNotes = createState("high");
+  withNotes.routines = withNotes.routines.map((item) => item.category === "gym" ? { ...item, options: ["Legs", "Arms"], optionNotes: { Legs: "Hip thrusts 3 x 8-12\nPlank" } } : item);
+  const noted = generateMonthlyPlan(withNotes).tasks.filter((task) => task.category === "gym" && task.sourceType === "routine");
+  assert(noted[0].notes === "Hip thrusts 3 x 8-12\nPlank", "a workout's exercises should be on its gym session");
+  assert(noted[1].notes === "Placed by weekly rules engine", "a workout without exercises keeps the default note");
   const plain = generateMonthlyPlan(createState("high")).tasks.filter((task) => task.category === "gym" && task.sourceType === "routine");
   assert(plain.every((task) => !task.title.includes("·")), "without workouts, gym titles stay as before");
 }

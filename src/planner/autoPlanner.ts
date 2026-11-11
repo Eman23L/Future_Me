@@ -351,7 +351,10 @@ function rotateRoutineOptions(state: PlannerState, planned: PlannedTask[]) {
         .filter((task) => task.sourceType === "routine" && task.sourceId === routine.id)
         .sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`))
         .forEach((task, index) => {
-          task.title = `${label} · ${options[index % options.length]}`;
+          const option = options[index % options.length];
+          task.title = `${label} · ${option}`;
+          const details = routine.optionNotes?.[option]?.trim();
+          if (details) task.notes = details;
         });
     });
 }
