@@ -83,4 +83,12 @@ const thin = writeStatement({ title: "Staff Nurse", employer: "Example NHS Trust
 assert(/\[Add an example showing: /.test(thin.statement), "gaps should become prompts");
 const noSpec = writeStatement({ title: "Staff Nurse", employer: "Example NHS Trust", text: "A busy ward looking for a caring nurse." }, profile);
 assert(noSpec.statement.includes("SBAR") && !/\[Add/.test(noSpec.statement), "without a person spec it should still use her strengths");
+// CV bullet points pasted from Word/PDF become clean first-person sentences.
+const cv = writeStatement({ title: "Staff Nurse", employer: "Example NHS Trust", text: "Person specification\nEssential criteria\nExcellent communication skills\nAbility to prioritise workload" }, {
+  previousStatement: "",
+  aboutMe: "\uf0b7 Time Management &amp; Prioritisation: Highly organised, able to manage competing clinical demands and prioritise workload.\n\uf0b7 Communication: Excellent interpersonal and clinical communication skills with patients and families.\n\u2022 Patient-Centred Care: Delivers compassionate, holistic care tailored to individual needs.",
+  alwaysMention: ""
+});
+assert(!/&amp;|\uf0b7|\u2022|Prioritisation:/.test(cv.statement), "pasted CV symbols and headings should be cleaned");
+assert(cv.statement.includes("I am highly organised") && cv.statement.includes("I have excellent interpersonal"), `CV lines should become first person: ${cv.statement}`);
 console.log("\nStatement checks passed.");

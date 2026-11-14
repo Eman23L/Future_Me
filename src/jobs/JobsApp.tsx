@@ -122,6 +122,11 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
         draft={store.drafts[view.job.vacancyId] ?? ""}
         nav={nav}
         onDraftChange={(statement) => saveStore({ ...store, drafts: { ...store.drafts, [view.job.vacancyId]: statement } })}
+        onExampleAdded={(statement, example) => saveStore({
+          ...store,
+          profile: { ...store.profile, aboutMe: [store.profile.aboutMe.trim(), example].filter(Boolean).join("\n") },
+          drafts: { ...store.drafts, [view.job.vacancyId]: statement }
+        })}
         onBack={() => setView({ name: "list" })}
         onEditProfile={() => setView({ name: "profile" })}
         onApplied={() => {
@@ -316,6 +321,7 @@ function ApplyScreen({
   draft,
   nav,
   onDraftChange,
+  onExampleAdded,
   onBack,
   onEditProfile,
   onApplied
@@ -326,6 +332,7 @@ function ApplyScreen({
   draft: string;
   nav: React.ReactNode;
   onDraftChange: (statement: string) => void;
+  onExampleAdded: (statement: string, example: string) => void;
   onBack: () => void;
   onEditProfile: () => void;
   onApplied: () => void;
@@ -414,7 +421,15 @@ function ApplyScreen({
           )}
         </div>
         <p className="capacity-helper">Built from your own sentences, matched to this job's person specification. Read it through and change anything that isn't quite right.</p>
-        {criteria.length > 0 && <CoverageList criteria={criteria} />}
+        {criteria.length > 0 && (
+          <CoverageList
+            criteria={criteria}
+            onAdd={(criterion, example) => {
+              onExampleAdded(insertExample(draft, criterion.text, example), example);
+              setCriteria((list) => list.map((item) => (item.text === criterion.text ? { ...item, covered: true } : item)));
+            }}
+          />
+        )}
         <textarea className="jobs-statement" rows={18} value={draft} onChange={(event) => onDraftChange(event.target.value)} placeholder={status ? "" : "Your supporting statement for this job"} />
         <small className={words > WORD_LIMIT ? "jobs-error" : "capacity-helper"}>{words} / {WORD_LIMIT} words</small>
         {placeholders && <p className="jobs-error">Fill in the parts in [square brackets] before applying.</p>}
@@ -444,23 +459,68 @@ function ApplyScreen({
   );
 }
 
-function CoverageList({ criteria }: { criteria: CriterionResult[] }) {
+function CoverageList({ criteria, onAdd }: { criteria: CriterionResult[]; onAdd: (criterion: CriterionResult, example: string) => void }) {
   const essential = criteria.filter((criterion) => criterion.essential);
   const covered = essential.filter((criterion) => criterion.covered).length;
   const missing = criteria.filter((criterion) => !criterion.covered);
+  // Missing essential ones first, so the most useful additions are at the top.
+  const ordered = [...criteria].sort((a, b) => Number(a.covered) - Number(b.covered) || Number(b.essential) - Number(a.essential));
   return (
     <details className="jobs-coverage">
-      <summary>Covers {covered} of {essential.length} essential criteria{missing.length ? ` · ${missing.length} not mentioned` : ""}</summary>
+      <summary>
+        Covers {covered} of {essential.length} essential criteria
+        {missing.length ? ` · tap to add examples for ${missing.length} more` : " ✓"}
+      </summary>
+      <p className="capacity-helper">For any ○ you can honestly show, type one sentence about a time you did it. It goes into this statement and is saved for future jobs.</p>
       <ul>
-        {criteria.map((criterion) => (
+        {ordered.map((criterion) => (
           <li key={criterion.text} className={criterion.covered ? "covered" : "missing"}>
             <span aria-hidden="true">{criterion.covered ? "✓" : "○"}</span> {criterion.text}{criterion.essential ? "" : " (desirable)"}
+            {!criterion.covered && <AddExample criterion={criterion} onAdd={onAdd} />}
           </li>
         ))}
       </ul>
-      {missing.length > 0 && <p className="capacity-helper">Add a line about any of the ○ ones you can honestly show, or add them to Your details so they're used next time.</p>}
     </details>
   );
+}
+
+function AddExample({ criterion, onAdd }: { criterion: CriterionResult; onAdd: (criterion: CriterionResult, example: string) => void }) {
+  const [text, setText] = useState("");
+  return (
+    <form
+      className="jobs-add-example"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const example = text.trim().replace(/\s+/g, " ");
+        if (!example) return;
+        onAdd(criterion, /[.!?]$/.test(example) ? example : `${example}.`);
+        setText("");
+      }}
+    >
+      <textarea
+        rows={2}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        placeholder="e.g. On my surgical placement I…"
+        aria-label={`Example for: ${criterion.text}`}
+      />
+      <button type="submit" className="secondary-action" disabled={!text.trim()}>Add</button>
+    </form>
+  );
+}
+
+// Puts her new example where it belongs: in place of the matching [prompt] if there is one,
+// otherwise just before the closing paragraph.
+function insertExample(statement: string, criterionText: string, example: string) {
+  const prompt = `[Add an example showing: ${criterionText.replace(/\.$/, "").toLowerCase()}]`;
+  if (statement.includes(prompt)) return statement.replace(prompt, example);
+  const paragraphs = statement.split("\n\n");
+  const closing = paragraphs.findIndex((paragraph) => /^Thank you for taking the time/.test(paragraph));
+  if (closing > 0) {
+    paragraphs[closing - 1] = `${paragraphs[closing - 1]} ${example}`;
+    return paragraphs.join("\n\n");
+  }
+  return statement.trim() ? `${statement.trim()} ${example}` : example;
 }
 
 function statusLabel(status: string) {
