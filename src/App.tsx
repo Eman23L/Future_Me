@@ -1560,7 +1560,8 @@ function DailyApp({
   const dueToday = dueTodayItems(state, visibleDate);
   const nextTask = whatsNext.nextTask;
   const [reminderBannerHidden, setReminderBannerHidden] = useState(false);
-  const remindersOff = !notificationsEnabled && notificationStatus !== "unsupported";
+  // Reminders live on her phone; on a laptop there's nothing to switch on, so don't nag there.
+  const remindersOff = !notificationsEnabled && notificationStatus !== "unsupported" && !isDesktopDevice();
   return (
     <main className="mobile-shell dashboard">
       <header className="dashboard-top">
@@ -2370,6 +2371,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 function isStandaloneMode() {
   return window.matchMedia("(display-mode: standalone)").matches || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
+function isDesktopDevice() {
+  const ua = window.navigator.userAgent;
+  return !/iPad|iPhone|iPod|Android|Mobile/.test(ua) && window.navigator.maxTouchPoints === 0;
 }
 
 function isIosSafari() {
