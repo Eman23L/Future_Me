@@ -6,14 +6,16 @@
   "scripts": {
     "compile": "tsc -p tsconfig.vite.json",
     "dev": "npm run build && node scripts/serve-dist.cjs",
-    "build": "npm run compile && vite build",
+    "build": "npm run compile && node scripts/build-extension.mjs && vite build",
     "generate:vapid": "node scripts/generate-vapid.cjs",
     "test:notifications": "npm run compile && node scripts/notification-checks.mjs",
     "test:scheduler": "npm run compile && node scripts/scheduler-checks.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "postinstall": "node scripts/patch-vite-windows-realpath.cjs"
+    "postinstall": "node scripts/patch-vite-windows-realpath.cjs",
+    "build:extension": "node scripts/build-extension.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@supabase/supabase-js": "^2.108.1",
     "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^4.3.4",
