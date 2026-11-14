@@ -1975,3 +1975,9 @@ body {
 @media (min-width: 900px) {
   .jobs-list { grid-template-columns: 1fr 1fr; }
 }
+
+.jobs-coverage { border: 1px solid var(--line); border-radius: 18px; background: #fff; padding: 12px 16px; }
+.jobs-coverage summary { cursor: pointer; color: var(--rose-dark); font-weight: 800; }
+.jobs-coverage ul { display: grid; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 0.9rem; }
+.jobs-coverage li.covered span { color: #2f8a57; font-weight: 900; }
+.jobs-coverage li.missing { color: var(--muted); }

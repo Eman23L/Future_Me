@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { callHelper, helperInstalled, onHelperPush, type HelperJob, type HelperState, type JobDetails } from "./helper";
+import { writeStatement, type CriterionResult } from "./statementWriter";
 
 // Jobs: a daily list of new NHS jobs (found by the Chrome helper on her laptop), a preview of
 // everything that will go into the application, and one tap to have it filled in on Trac.
@@ -335,23 +336,13 @@ function ApplyScreen({
   const [opening, setOpening] = useState(false);
   const profileMissing = !profile.previousStatement.trim() && !profile.aboutMe.trim();
 
-  const writeDraft = useCallback(async (jobDetails: JobDetails) => {
-    setStatus("Writing your supporting statement…");
-    setError("");
-    try {
-      const response = await fetch("/api/jobs/statement", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job: { title: job.title, employer: job.employer, text: jobDetails.text }, profile, wordLimit: WORD_LIMIT })
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || "Couldn't write the statement.");
-      onDraftChange(body.statement);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setStatus("");
-    }
+  const [criteria, setCriteria] = useState<CriterionResult[]>([]);
+
+  // Written on this device from her own sentences: free and instant.
+  const writeDraft = useCallback((jobDetails: JobDetails, replace = true) => {
+    const result = writeStatement({ title: job.title, employer: job.employer, speciality: job.speciality, text: jobDetails.text }, profile);
+    setCriteria(result.criteria);
+    if (replace) onDraftChange(result.statement);
   }, [job, profile, onDraftChange]);
 
   useEffect(() => {
@@ -362,7 +353,7 @@ function ApplyScreen({
         if (cancelled) return;
         setDetails(result);
         setStatus("");
-        if (!draft && !profileMissing) writeDraft(result);
+        if (!profileMissing) writeDraft(result, !draft);
       })
       .catch((reason) => {
         if (cancelled) return;
@@ -419,10 +410,11 @@ function ApplyScreen({
         <div className="jobs-section-head">
           <h2>Supporting information</h2>
           {details && !profileMissing && (
-            <button className="secondary-action" onClick={() => writeDraft(details)} disabled={Boolean(status)}>Write it again</button>
+            <button className="secondary-action" onClick={() => { if (!draft.trim() || window.confirm("Start again from your details? Your edits to this statement will be replaced.")) writeDraft(details); }} disabled={Boolean(status)}>Start again</button>
           )}
         </div>
-        <p className="capacity-helper">Read it through and make it sound like you. Trusts want your own words, so change anything that isn't quite right.</p>
+        <p className="capacity-helper">Built from your own sentences, matched to this job's person specification. Read it through and change anything that isn't quite right.</p>
+        {criteria.length > 0 && <CoverageList criteria={criteria} />}
         <textarea className="jobs-statement" rows={18} value={draft} onChange={(event) => onDraftChange(event.target.value)} placeholder={status ? "" : "Your supporting statement for this job"} />
         <small className={words > WORD_LIMIT ? "jobs-error" : "capacity-helper"}>{words} / {WORD_LIMIT} words</small>
         {placeholders && <p className="jobs-error">Fill in the parts in [square brackets] before applying.</p>}
@@ -449,6 +441,25 @@ function ApplyScreen({
       </button>
       {nav}
     </main>
+  );
+}
+
+function CoverageList({ criteria }: { criteria: CriterionResult[] }) {
+  const essential = criteria.filter((criterion) => criterion.essential);
+  const covered = essential.filter((criterion) => criterion.covered).length;
+  const missing = criteria.filter((criterion) => !criterion.covered);
+  return (
+    <details className="jobs-coverage">
+      <summary>Covers {covered} of {essential.length} essential criteria{missing.length ? ` · ${missing.length} not mentioned` : ""}</summary>
+      <ul>
+        {criteria.map((criterion) => (
+          <li key={criterion.text} className={criterion.covered ? "covered" : "missing"}>
+            <span aria-hidden="true">{criterion.covered ? "✓" : "○"}</span> {criterion.text}{criterion.essential ? "" : " (desirable)"}
+          </li>
+        ))}
+      </ul>
+      {missing.length > 0 && <p className="capacity-helper">Add a line about any of the ○ ones you can honestly show, or add them to Your details so they're used next time.</p>}
+    </details>
   );
 }
 
