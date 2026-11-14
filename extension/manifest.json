@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "FutureMe Job Helper",
+  "version": "0.1.0",
+  "description": "Finds new NHS jobs for FutureMe and fills in Trac applications for you to check and submit.",
+  "icons": { "128": "icon.png" },
+  "action": { "default_title": "FutureMe Job Helper", "default_icon": { "128": "icon.png" } },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage", "alarms", "offscreen", "tabs"],
+  "host_permissions": [
+    "https://www.healthjobsuk.com/*",
+    "https://healthjobsuk.com/*",
+    "https://apps.trac.jobs/*",
+    "https://futureme.thetechbuilder.co.uk/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://futureme.thetechbuilder.co.uk/*", "http://127.0.0.1/*", "http://localhost/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.healthjobsuk.com/*", "https://healthjobsuk.com/*"],
+      "js": ["parse.js", "healthjobs.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://apps.trac.jobs/*"],
+      "js": ["trac.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

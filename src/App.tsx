@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { JobsApp } from "./jobs/JobsApp";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { LocalPlannerRepository } from "./data/LocalPlannerRepository";
 import { createSeedState } from "./data/seed";
@@ -39,6 +40,7 @@ type ReminderDebugState = {
 };
 
 type FlowStep =
+  | "jobs"
   | "start"
   | "loading"
   | "month"
@@ -407,6 +409,7 @@ export function App() {
     const params = new URLSearchParams(window.location.search);
     const requestedDate = params.get("date");
     const openToday = params.get("view") === "today";
+    const openJobs = params.get("view") === "jobs";
     setRealToday(today);
     service.load(monthKey)
       .then(async (loaded) => {
@@ -414,7 +417,7 @@ export function App() {
         const withPlan = withCurrentMonth.setupComplete ? await service.generate(withCurrentMonth) : withCurrentMonth;
         setFlexibleConfigs(configsFromRoutines(withPlan.routines));
         setSelectedDate(requestedDate && withPlan.setupComplete ? requestedDate : null);
-        setStep((requestedDate || openToday) && withPlan.setupComplete ? "review" : "start");
+        setStep(openJobs ? "jobs" : (requestedDate || openToday) && withPlan.setupComplete ? "review" : "start");
         setState(withPlan);
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : "Unable to load planner data."));
@@ -965,6 +968,22 @@ export function App() {
 
   const screen = (() => {
 
+  if (step === "jobs") {
+    return (
+      <JobsApp
+        nav={
+          <nav className="bottom-nav">
+            <button onClick={() => { setSelectedDate(null); setStep(state.setupComplete ? "review" : "start"); }}>Today</button>
+            <button onClick={() => setStep(state.setupComplete ? "capacity" : "start")}>Energy</button>
+            <button onClick={() => setStep(state.setupComplete ? "calendar" : "start")}>Month</button>
+            <button className="active">Jobs</button>
+            <button onClick={goHome}>Home</button>
+          </nav>
+        }
+      />
+    );
+  }
+
   if (state.setupComplete && step === "review") {
     const whatsNext = getWhatsNext(state);
     return (
@@ -984,6 +1003,7 @@ export function App() {
         onBack={() => setStep("month")}
         onHome={goHome}
         onPlan={() => setStep("calendar")}
+        onJobs={() => setStep("jobs")}
         onWeeklyCheck={() => setStep("capacity")}
         onComplete={completeTask}
         onRequestNotifications={requestNotifications}
@@ -1020,6 +1040,7 @@ export function App() {
         }}
         onWeeklyCheck={() => setStep("capacity")}
         onAddToMonth={() => setStep("month")}
+        onJobs={() => setStep("jobs")}
       >
         <InstallInstructionsModal open={showInstallInstructions} onClose={() => setShowInstallInstructions(false)} />
         <ReminderInstructionsModal open={showReminderInstructions} onClose={() => setShowReminderInstructions(false)} />
@@ -1029,7 +1050,7 @@ export function App() {
 
   return (
     <FlowShell step={step} state={state} installControls={installControls} onBack={() => setStep(state.setupComplete && step === "month" ? "calendar" : previousStep(step))} onHome={goHome}>
-      {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} />}
+      {step === "start" && <StartScreen hasSavedData={hasSavedData(state)} onSetup={beginSetup} onContinue={continueCurrentPlan} onStartNewMonth={startNewMonth} onJobs={() => setStep("jobs")} />}
       {step === "loading" && <FutureMeLoading />}
       {step === "month" && <MonthSetupStep state={state} onUpdate={update} onMonthChange={changePlanMonth} onSelect={openFixedFlow} onEdit={editInput} onRoutines={() => setStep("flexible")} onNext={() => setStep(state.setupComplete ? "calendar" : "flexible")} />}
       {step === "work-time" && <WorkTimeStep draft={workDraft} onDraftChange={setWorkDraft} onNext={() => setStep("work-dates")} />}
@@ -1107,12 +1128,14 @@ function StartScreen({
   hasSavedData,
   onSetup,
   onContinue,
-  onStartNewMonth
+  onStartNewMonth,
+  onJobs
 }: {
   hasSavedData: boolean;
   onSetup: () => void;
   onContinue: () => void;
   onStartNewMonth: () => void;
+  onJobs: () => void;
 }) {
   return (
     <section className="welcome-card">
@@ -1123,6 +1146,7 @@ function StartScreen({
       <div className="welcome-actions">
         <button className="secondary-action" onClick={onContinue} disabled={!hasSavedData}>Continue current plan</button>
         <button className="secondary-action" onClick={onStartNewMonth}>Start new month</button>
+        <button className="secondary-action" onClick={onJobs}>Jobs</button>
       </div>
     </section>
   );
@@ -1517,6 +1541,7 @@ function DailyApp({
   onBack,
   onHome,
   onPlan,
+  onJobs,
   onWeeklyCheck,
   onComplete,
   onRequestNotifications,
@@ -1544,6 +1569,7 @@ function DailyApp({
   onBack: () => void;
   onHome: () => void;
   onPlan: () => void;
+  onJobs: () => void;
   onWeeklyCheck: () => void;
   onComplete: (task: PlannedTask) => void;
   onRequestNotifications: () => void;
@@ -1560,7 +1586,8 @@ function DailyApp({
   const dueToday = dueTodayItems(state, visibleDate);
   const nextTask = whatsNext.nextTask;
   const [reminderBannerHidden, setReminderBannerHidden] = useState(false);
-  const remindersOff = !notificationsEnabled && notificationStatus !== "unsupported";
+  // Reminders live on her phone; on a laptop there's nothing to switch on, so don't nag there.
+  const remindersOff = !notificationsEnabled && notificationStatus !== "unsupported" && !isDesktopDevice();
   return (
     <main className="mobile-shell dashboard">
       <header className="dashboard-top">
@@ -1666,6 +1693,7 @@ function DailyApp({
         <button className={isViewingToday ? "active" : ""} onClick={onToday}>{isViewingToday ? "Today" : "Current day"}</button>
         <button onClick={onWeeklyCheck}>Energy</button>
         <button onClick={onPlan}>Month</button>
+        <button onClick={onJobs}>Jobs</button>
         <button onClick={onHome}>Home</button>
       </nav>
       {children}
@@ -1684,6 +1712,7 @@ function MonthCalendarApp({
   onToday,
   onWeeklyCheck,
   onAddToMonth,
+  onJobs,
   children
 }: {
   state: PlannerState;
@@ -1696,6 +1725,7 @@ function MonthCalendarApp({
   onToday: () => void;
   onWeeklyCheck: () => void;
   onAddToMonth: () => void;
+  onJobs: () => void;
   children?: React.ReactNode;
 }) {
   const days = monthDays(state.plannedMonth);
@@ -1744,6 +1774,7 @@ function MonthCalendarApp({
         <button onClick={onToday}>Today</button>
         <button onClick={onWeeklyCheck}>Energy</button>
         <button className="active">Month</button>
+        <button onClick={onJobs}>Jobs</button>
         <button onClick={onHome}>Home</button>
       </nav>
       {children}
@@ -2370,6 +2401,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 function isStandaloneMode() {
   return window.matchMedia("(display-mode: standalone)").matches || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
+function isDesktopDevice() {
+  const ua = window.navigator.userAgent;
+  return !/iPad|iPhone|iPod|Android|Mobile/.test(ua) && window.navigator.maxTouchPoints === 0;
 }
 
 function isIosSafari() {
