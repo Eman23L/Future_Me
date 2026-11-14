@@ -100,11 +100,44 @@ export function readValues(text: string): string[] {
 // ---------- her sentences ----------
 type Sentence = { text: string; tokens: Set<string>; themes: Set<string>; order: number };
 
-function splitSentences(text: string) {
+const ENTITIES: Record<string, string> = { amp: "&", nbsp: " ", quot: '"', apos: "'", lt: "<", gt: ">", "#39": "'", ndash: "–", mdash: "—", rsquo: "’", lsquo: "‘" };
+// Bullet symbols from Word/PDF CVs, including the private-use ones that show up as boxes.
+const BULLETS = /[\uE000-\uF8FF\u2022\u25A0-\u25FF\u2610-\u2612\u2713\u2714\u27A2\u2794\u25BA\u00B7●◦▪■□▯]/g;
+
+function cleanPaste(text: string) {
   return text
+    .replace(/&(#?\w+);/g, (match, name) => ENTITIES[name.toLowerCase()] ?? match)
     .replace(/\r/g, "")
+    .replace(BULLETS, "\n")
+    .replace(/[ \t]+/g, " ");
+}
+
+// CV-style lines ("Time Management: Highly organised, able to…") become first-person sentences.
+const I_AM = /^(highly|very|confident|skilled|experienced|able|committed|passionate|proficient|competent|dedicated|organised|organized|adaptable|flexible|reliable|caring|compassionate|motivated|enthusiastic|knowledgeable|trained|qualified|resilient|calm|approachable|hard[- ]working)\b/i;
+const I_HAVE = /^(strong|excellent|good|extensive|sound|solid|proven|great|effective|clear|thorough|broad|in-depth|practical|hands-on)\b/i;
+
+function firstPerson(line: string) {
+  let text = line.trim().replace(/^[-–*>]+\s*/, "");
+  // Drop a short heading before a colon: "Communication: Excellent…" → "Excellent…"
+  const heading = text.match(/^([A-Z][\w&/'’ ,-]{1,60}):\s+(.+)$/);
+  if (heading && heading[1].split(/\s+/).length <= 6) text = heading[2];
+  if (/^(I|My|Me|As|In|On|At|During|When|While|Since|Having|Before|After|Working|Through|This|These|Being)\b/.test(text)) return text;
+  const lower = text.charAt(0).toLowerCase() + text.slice(1);
+  if (I_AM.test(text)) return `I am ${lower}`;
+  if (I_HAVE.test(text)) return `I have ${lower}`;
+  // "Delivers compassionate care…" → "I deliver compassionate care…"
+  const verb = text.match(/^([A-Z][a-z]+?)(ies|es|s)\b(.*)$/);
+  if (verb && /^(deliver|provid|maintain|build|support|communicat|manag|ensur|demonstrat|work|use|adapt|prioritis|lead|assess|monitor|document|escalat|promot|collaborat|care|administer|perform|carr)/i.test(verb[1])) {
+    const base = verb[2] === "ies" ? `${verb[1]}y` : verb[2] === "es" && /(ss|sh|ch|x|z|o)$/i.test(verb[1]) ? verb[1] : verb[1] + (verb[2] === "es" ? "e" : "");
+    return `I ${base.toLowerCase()}${verb[3]}`;
+  }
+  return text;
+}
+
+function splitSentences(text: string) {
+  return cleanPaste(text)
     .split(/\n+|(?<=[.!?])\s+(?=[A-Z"'‘“])/)
-    .map((sentence) => sentence.trim())
+    .map((sentence) => firstPerson(sentence.trim()))
     .filter((sentence) => sentence.split(/\s+/).length >= 5);
 }
 
