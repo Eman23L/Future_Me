@@ -1989,3 +1989,12 @@ body {
 
 .jobs-restore { position: relative; display: grid; place-items: center; min-height: 48px; border-radius: 999px; font-weight: 900; cursor: pointer; }
 .jobs-restore input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.jobs-claude { display: grid; gap: 10px; }
+.jobs-claude > .secondary-action { min-height: 48px; border-radius: 999px; font-weight: 900; }
+.jobs-claude ol { display: grid; gap: 6px; margin: 0; padding: 12px 16px 12px 34px; border: 1px solid var(--line); border-radius: 18px; background: #fff; line-height: 1.5; }
+.jobs-claude textarea { border: 1px solid rgba(214, 176, 186, 0.6); border-radius: 16px; padding: 12px 14px; font: inherit; font-size: 16px; resize: vertical; }
+.jobs-claude-actions { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; }
+.jobs-claude-actions .bottom-action { margin-top: 0; min-height: 48px; }
+.jobs-claude-actions .secondary-action { min-height: 48px; border-radius: 999px; font-weight: 800; }
+@media (max-width: 600px) { .jobs-claude-actions { grid-template-columns: 1fr; } }
