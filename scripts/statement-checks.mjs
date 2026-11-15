@@ -1,5 +1,5 @@
 // Checks the free statement writer on a realistic advert and a made-up applicant.
-import { readPersonSpec, readValues, writeStatement } from "../build-src/jobs/statementWriter.js";
+import { addExampleToStatement, cleanJob, composeExample, readPersonSpec, readValues, writeStatement } from "../build-src/jobs/statementWriter.js";
 
 const advert = `Staff Nurse - Endoscopy
 Working for our organisation
@@ -91,4 +91,31 @@ const cv = writeStatement({ title: "Staff Nurse", employer: "Example NHS Trust",
 });
 assert(!/&amp;|\uf0b7|\u2022|Prioritisation:/.test(cv.statement), "pasted CV symbols and headings should be cleaned");
 assert(cv.statement.includes("I am highly organised") && cv.statement.includes("I have excellent interpersonal"), `CV lines should become first person: ${cv.statement}`);
+// A person spec that's only a PDF: the advert's small print must not become criteria.
+const smallPrint = "Person specification\nPlease ensure that you read the Person Specification attached below as your application will be judged against this.\nShould you withdraw your application, you may be required to reimburse the cost of the DBS check.\nDBS checks remain free of charge for volunteer positions.\nThe DBS Code of Practice can be accessed here.";
+assert(readPersonSpec(smallPrint).length === 0, "DBS small print must not be read as criteria");
+const pdfOnly = writeStatement({ title: "Staff Nurse", employer: "Example NHS Trust", text: smallPrint }, profile);
+assert(pdfOnly.usedDefaults && pdfOnly.criteria.length === 6 && !/DBS/.test(JSON.stringify(pdfOnly.criteria)), "PDF-only adverts should use the usual nursing criteria");
+
+// CV structure lines (job headings, dates, place lists, ALL CAPS) are not sentences about her.
+const structured = writeStatement({ title: "Staff Nurse", employer: "Example NHS Trust", text: advert }, {
+  previousStatement: "Student Nurse - Clinical Placements\nManchester University NHS Foundation Trust | September 2020 - November 2024\nPlacement areas: Neonatal Intensive Care Unit, Liver Clinic, Gynaecology Outpatients\nQUALIFYING IN JAN 2027 FROM MIDWIFERY, NIPE TRAINED, GOOD WITH PATIENTS\nI communicate clearly with patients and families, and I give structured handovers to colleagues using SBAR.",
+  aboutMe: "", alwaysMention: ""
+});
+assert(!/\||Placement areas|QUALIFYING|Clinical Placements/.test(structured.statement), `CV structure lines should be left out: ${structured.statement}`);
+
+// A job saved with the whole card as its title is split back into its parts.
+const messy = cleanJob({ title: "Endoscopy Staff Nurse\nNHS AfC: Band 5\nBlackpool Teaching Hospitals NHS Foundation Trust\n, Blackpool\nSpeciality: Endoscopy\nSalary: £32,073 - £39,043 per annum, pro rata", employer: "", location: "", band: "", speciality: "", salary: "", vacancyId: "1", url: "" });
+assert(messy.title === "Endoscopy Staff Nurse" && messy.employer === "Blackpool Teaching Hospitals NHS Foundation Trust" && messy.location === "Blackpool" && messy.band === "Band 5" && messy.speciality === "Endoscopy" && messy.salary.startsWith("£32,073"), `job should be tidied: ${JSON.stringify(messy)}`);
+
+// Her added examples are woven in with a lead-in, not pasted as typed.
+const woven = composeExample("Ability to challenge unacceptable behaviour or practice in a professional context", "on placement i noticed a colleague not washing hands and i calmly reminded them", "", "Endoscopy");
+assert(woven.startsWith("I am able to challenge unacceptable behaviour or practice in a professional context. For example, on placement"), `example should be woven in: ${woven}`);
+const speciality = composeExample("Experience in the relevant speciality of which you are applying", "I prepared patients for endoscopy and monitored them afterwards", "For example, x", "Endoscopy");
+assert(speciality === "I have experience in endoscopy. For instance, I prepared patients for endoscopy and monitored them afterwards.", `speciality example: ${speciality}`);
+const skills = composeExample("Excellent verbal, written and interpersonal communication skills", "Communication: Explaining procedures to anxious patients &amp; families");
+assert(skills.startsWith("I have strong verbal, written and interpersonal communication skills. For example,") && !skills.includes("&amp;"), `skills example: ${skills}`);
+const placed = addExampleToStatement(result.statement, "Ability to challenge unacceptable behaviour", woven);
+const skillsParagraph = placed.split("\n\n").find((paragraph) => paragraph.startsWith("Good communication and teamwork"));
+assert(skillsParagraph && skillsParagraph.includes("I am able to challenge"), "example should go into the paragraph about the same topic");
 console.log("\nStatement checks passed.");

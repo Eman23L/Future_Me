@@ -70,13 +70,16 @@ function parseJobList(doc, baseUrl) {
     if (jobs.has(vacancyId)) continue;
     const container = jobContainer(link, vacancyId);
     const lines = linesOf(container);
-    const title = cleanText(link.textContent) || lines[0] || "";
+    // On HealthJobsUK the whole job card can be one link, so take only its first line as the title.
+    const title = linesOf(link)[0] || lines[0] || "";
     if (!title) continue;
     const titleIndex = lines.findIndex((line) => line.includes(title));
     const employerLine = lines.find((line, index) =>
       index > titleIndex && !/^(Speciality|Salary|Band|NHS AfC)/i.test(line) && !/Band\s*\d/i.test(line) && line !== lines[titleIndex]
     ) || "";
-    const [employer, location] = employerLine.split(/\s+,\s+|,\s+(?=[^,]+$)/);
+    let [employer, location] = employerLine.split(/\s+,\s+|,\s+(?=[^,]+$)/);
+    const nextLine = lines[lines.indexOf(employerLine) + 1] || "";
+    if (!location && nextLine.startsWith(",")) location = nextLine.replace(/^,\s*/, "");
     const bandMatch = lines.join(" ").match(/(?:NHS AfC:\s*)?Band\s*\d+[a-z]?(?:\s*[-/]\s*\d+)?/i);
     jobs.set(vacancyId, {
       vacancyId,
