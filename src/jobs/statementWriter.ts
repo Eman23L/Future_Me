@@ -9,7 +9,7 @@ export type WriterJob = { title: string; employer: string; speciality?: string; 
 
 export type Criterion = { text: string; essential: boolean; category: Category };
 export type CriterionResult = Criterion & { covered: boolean };
-export type WriterResult = { statement: string; criteria: CriterionResult[]; values: string[] };
+export type WriterResult = { statement: string; criteria: CriterionResult[]; values: string[]; usedDefaults: boolean };
 
 type Category = "qualifications" | "experience" | "skills" | "knowledge" | "other";
 
@@ -61,6 +61,17 @@ const themesOf = (text: string) => new Set(Object.keys(THEMES).filter((key) => T
 // ---------- reading the job ----------
 const STOP_HEADINGS = /^(documents to download|further details|recruitment information|using ai|apply online|to stay up to date|applicant requirements|working for our organisation|detailed job description)/i;
 
+const NOTICE = /\b(DBS|disclosure|you (may|will|must|can)|you are (encouraged|required|advised|asked)|please|click|attached|download|application|apply|withdraw|reimburse|fee|£|code of practice|accessed here|update service)\b/i;
+
+export const DEFAULT_CRITERIA: Criterion[] = [
+  { text: "Excellent communication skills with patients, families and colleagues", essential: true, category: "skills" },
+  { text: "Working well as part of a team and independently", essential: true, category: "skills" },
+  { text: "Compassionate, person-centred care", essential: true, category: "experience" },
+  { text: "Maintaining safe standards of care and escalating concerns", essential: true, category: "skills" },
+  { text: "Relevant clinical skills and experience", essential: true, category: "experience" },
+  { text: "Commitment to learning and professional development", essential: true, category: "knowledge" }
+];
+
 export function readPersonSpec(text: string): Criterion[] {
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const start = lines.findIndex((line) => /^person specification/i.test(line));
@@ -69,16 +80,19 @@ export function readPersonSpec(text: string): Criterion[] {
   const criteria: Criterion[] = [];
   let essential = true;
   let category: Category = "other";
+  // Only lines under an "Essential"/"Desirable" heading count; a person spec that's only a PDF
+  // leaves the advert's small print (DBS notices etc.) after the heading, which isn't criteria.
+  let markerSeen = false;
   for (const line of lines.slice(from)) {
     if (STOP_HEADINGS.test(line)) break;
-    if (/^essential( criteria)?:?$/i.test(line)) { essential = true; continue; }
-    if (/^desirable( criteria)?:?$/i.test(line)) { essential = false; continue; }
+    if (/^essential( criteria)?:?$/i.test(line)) { essential = true; markerSeen = true; continue; }
+    if (/^desirable( criteria)?:?$/i.test(line)) { essential = false; markerSeen = true; continue; }
     if (/^(qualifications?( and training)?|education)$/i.test(line)) { category = "qualifications"; continue; }
     if (/^experience$/i.test(line)) { category = "experience"; continue; }
     if (/^(skills?( and abilities)?|abilities)$/i.test(line)) { category = "skills"; continue; }
     if (/^knowledge$/i.test(line)) { category = "knowledge"; continue; }
     if (/^(additional|other|personal (qualities|attributes)|values|disposition)/i.test(line) && line.split(" ").length <= 3) { category = "other"; continue; }
-    if (line.length < 6 || line.length > 220) continue;
+    if (!markerSeen || line.length < 6 || line.length > 220 || NOTICE.test(line) || line.split(/\s+/).length > 30) continue;
     criteria.push({ text: line.replace(/^[•\-–*]\s*/, ""), essential, category });
   }
   return criteria.slice(0, 40);
@@ -149,6 +163,7 @@ function herSentences(profile: WriterProfile): Sentence[] {
   const seen = new Set<string>();
   return splitSentences(source)
     .filter((text) => !ABOUT_OLD_JOB.test(text))
+    .filter((text) => /\b(I|my|me|I'm|I've)\b/.test(text) && !/\|/.test(text) && (text.replace(/[^A-Z]/g, "").length / Math.max(text.replace(/[^A-Za-z]/g, "").length, 1)) < 0.5)
     .map((text) => (/[.!?]$/.test(text) ? text : `${text}.`))
     .filter((text) => {
       const key = text.toLowerCase();
@@ -184,6 +199,14 @@ function listJoin(items: string[]) {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+function topicOf(text: string): Category {
+  const themes = themesOf(text);
+  if (/\b(placement|worked|working on|cared for|nursed|since \d{4})\b/i.test(text)) return "experience";
+  if (/audit|research|evidence|training|study|course|cpd|learn|qualif|degree|msc/i.test(text)) return "knowledge";
+  if (themes.has("communication") || themes.has("standards") || (themes.has("teamwork") && !/\b(placement|ward)\b/i.test(text))) return "skills";
+  return "experience";
+}
+
 const CATEGORY_ORDER: Category[] = ["experience", "skills", "knowledge", "qualifications", "other"];
 const OPENERS: Partial<Record<Category, string>> = {
   experience: "My clinical experience so far has given me a strong foundation for this post.",
@@ -193,7 +216,9 @@ const OPENERS: Partial<Record<Category, string>> = {
 
 export function writeStatement(job: WriterJob, profile: WriterProfile): WriterResult {
   const sentences = herSentences(profile);
-  const criteria = readPersonSpec(job.text);
+  const specCriteria = readPersonSpec(job.text);
+  const usedDefaults = specCriteria.length === 0;
+  const criteria = usedDefaults ? DEFAULT_CRITERIA : specCriteria;
   const values = readValues(job.text);
   const used = new Set<number>();
   const byCategory = new Map<Category, Sentence[]>();
@@ -202,14 +227,7 @@ export function writeStatement(job: WriterJob, profile: WriterProfile): WriterRe
 
   // Group each sentence with others about the same thing, so paragraphs read naturally.
   const take = (sentence: Sentence, _criterionCategory: Category) => {
-    const handsOn = /\b(placement|worked|working on|cared for|nursed|since \d{4})\b/i.test(sentence.text);
-    const category: Category = handsOn
-      ? "experience"
-      : /audit|research|evidence|training|study|course|cpd|learn|qualif|degree|msc/i.test(sentence.text)
-      ? "knowledge"
-      : sentence.themes.has("communication") || sentence.themes.has("standards") || (sentence.themes.has("teamwork") && !/\b(placement|ward)\b/i.test(sentence.text))
-        ? "skills"
-        : "experience";
+    const category = topicOf(sentence.text);
     used.add(sentence.order);
     byCategory.set(category, [...(byCategory.get(category) ?? []), sentence]);
   };
@@ -246,15 +264,6 @@ export function writeStatement(job: WriterJob, profile: WriterProfile): WriterRe
     if (!covered && criterion.essential) gaps.push(criterion);
   }
 
-  // With no person spec on the advert, fall back to the themes every nursing/midwifery post looks for.
-  if (!criteria.length) {
-    const jobThemes = themesOf(`${job.title} ${job.speciality ?? ""} ${job.text.slice(0, 6000)}`);
-    for (const theme of ["communication", "teamwork", "compassion", "clinical", "standards", "learning", ...jobThemes]) {
-      const best = sentences.filter((sentence) => !used.has(sentence.order) && sentence.themes.has(theme)).sort((a, b) => a.order - b.order)[0];
-      if (best) take(best, theme === "learning" ? "knowledge" : theme === "clinical" ? "experience" : "skills");
-    }
-  }
-
   const employer = job.employer || "your organisation";
   const short = shortEmployer(employer);
   const paragraphs: string[] = [];
@@ -276,7 +285,8 @@ export function writeStatement(job: WriterJob, profile: WriterProfile): WriterRe
   let prompts = 0;
   for (const category of CATEGORY_ORDER) {
     const picked = (byCategory.get(category) ?? []).sort((a, b) => a.order - b.order);
-    const categoryGaps = gaps.filter((gap) => gap.category === category && (category === "experience" || category === "skills" || category === "knowledge"));
+    // Prompts only for a real person spec; the usual-criteria fallback is handled by the checklist.
+    const categoryGaps = usedDefaults ? [] : gaps.filter((gap) => gap.category === category && (category === "experience" || category === "skills" || category === "knowledge"));
     if (!picked.length && !categoryGaps.length) continue;
     const parts: string[] = [];
     if (picked.length && OPENERS[category]) parts.push(OPENERS[category] as string);
@@ -311,6 +321,94 @@ export function writeStatement(job: WriterJob, profile: WriterProfile): WriterRe
   return {
     statement: paragraphs.filter(Boolean).join("\n\n"),
     criteria: results,
-    values
+    values,
+    usedDefaults
   };
+}
+
+// ---------- tidying job details ----------
+// On HealthJobsUK the whole job card is one link, so older saved jobs can have the band,
+// employer, speciality and salary stuck in the title. Split them back out.
+type JobFields = { title: string; employer: string; location: string; band: string; speciality: string; salary: string };
+
+export function cleanJob<T extends JobFields>(job: T): T {
+  if (!/\n/.test(job.title) && !/\n/.test(job.employer)) return job;
+  const lines = `${job.title}\n${job.employer}`.split("\n").map((line) => line.trim()).filter(Boolean);
+  const valueAfter = (label: RegExp) => {
+    const index = lines.findIndex((line) => label.test(line));
+    if (index < 0) return "";
+    const inline = lines[index].replace(label, "").replace(/^\s*:?\s*/, "").trim();
+    return inline || lines[index + 1] || "";
+  };
+  const employerIndex = lines.findIndex((line, index) =>
+    index > 0 && /\b(NHS|Trust|Board|Hospital|Hospitals|Health|Council|Care|Ltd|Limited|Hospice|Service)\b/.test(line) && !/^(NHS AfC|Speciality|Salary|Band)\b/i.test(line)
+  );
+  let employer = employerIndex > 0 ? lines[employerIndex] : job.employer.split("\n")[0];
+  let location = job.location;
+  const after = employerIndex > 0 ? lines[employerIndex + 1] ?? "" : "";
+  if (after.startsWith(",")) location = after.replace(/^,\s*/, "");
+  else if (employer.includes(" , ")) [employer, location] = employer.split(" , ");
+  const band = lines.find((line) => /\bband\s*\d/i.test(line))?.replace(/^NHS AfC:\s*/i, "") ?? job.band;
+  return {
+    ...job,
+    title: lines[0],
+    employer: employer.replace(/\s*,\s*$/, "").trim(),
+    location: (location || "").trim(),
+    band,
+    speciality: valueAfter(/^Speciality\b/i) || job.speciality,
+    salary: valueAfter(/^Salary\b/i) || job.salary
+  };
+}
+
+// ---------- weaving in a new example ----------
+const CONNECTORS = ["For example,", "For instance,", "In practice,", "As an example,"];
+
+function lowerFirst(text: string) {
+  const [first, second = ""] = text.split(/\s+/);
+  const keep = first === "I" || /^I['’]/.test(first) || /^[A-Z]{2,}/.test(first) || (/^[A-Z]/.test(first) && /^[A-Z]/.test(second));
+  return keep ? text : text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+// Turns her example into a sentence that says which criterion it shows, in a natural way:
+// "Ability to challenge poor practice" + "On placement I raised…" →
+// "I am able to challenge poor practice. For example, on placement I raised…"
+export function composeExample(criterion: string, example: string, statement = "", area = ""): string {
+  let sentence = firstPerson(cleanPaste(example).replace(/\n+/g, " ").replace(/\s+/g, " ").trim());
+  if (!/[.!?]$/.test(sentence)) sentence = `${sentence}.`;
+  sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+
+  let wanted = criterion.replace(/\s*\((desirable|essential)\)\s*$/i, "").replace(/\.$/, "").trim();
+  wanted = wanted.replace(/(in |of )?the relevant (speciality|specialty|area|field|setting)( of which you are applying| (that )?you are applying (for|to))?/i, (_match, prep) => `${prep ?? "in "}${area ? area.toLowerCase() : "this area"}`);
+  if (/\byou\b/i.test(wanted)) return sentence; // criteria written to the reader don't turn into a sentence about her
+
+  const connector = CONNECTORS[CONNECTORS.filter((item) => statement.includes(item)).length % CONNECTORS.length];
+  const withExample = (lead: string) => `${lead} ${connector} ${lowerFirst(sentence)}`;
+  let match: RegExpMatchArray | null;
+  if ((match = wanted.match(/^(?:the )?abilit(?:y|ies) to (.+)$/i))) return withExample(`I am able to ${match[1]}.`);
+  if ((match = wanted.match(/^(?:proven |previous |recent |some )?experience (of|in|with|working) (.+)$/i))) return withExample(`I have experience ${match[1]} ${match[2]}.`);
+  if ((match = wanted.match(/^(?:good |sound |up[- ]to[- ]date |current )?(knowledge|understanding|awareness) of (.+)$/i))) return withExample(`I have a good ${match[1].toLowerCase()} of ${match[2]}.`);
+  if ((match = wanted.match(/^(?:excellent|good|effective|strong|well[- ]developed)\s+(.+?)\s+skills$/i))) return withExample(`I have strong ${match[1].toLowerCase()} skills.`);
+  if ((match = wanted.match(/^(?:a |demonstrable |evidence of )?commitment to (.+)$/i))) return withExample(`I am committed to ${match[1]}.`);
+  return sentence;
+}
+
+// Adds it where it belongs: in place of that criterion's [prompt] if there is one, otherwise at
+// the end of the paragraph about the same topic (experience, skills or learning).
+export function addExampleToStatement(statement: string, criterion: string, composed: string) {
+  const prompt = `[Add an example showing: ${criterion.replace(/\.$/, "").toLowerCase()}]`;
+  if (statement.includes(prompt)) return statement.replace(prompt, composed);
+  const paragraphs = statement.split("\n\n");
+  // The criterion decides the paragraph: "challenge poor practice" sits with skills even if the example is from a placement.
+  const topic = /^(?:proven |previous |recent |some )?experience\b/i.test(criterion) ? "experience" : topicOf(criterion);
+  const opener = OPENERS[topic];
+  const home = opener ? paragraphs.findIndex((paragraph) => paragraph.startsWith(opener)) : -1;
+  if (home >= 0) {
+    paragraphs[home] = `${paragraphs[home]} ${composed}`;
+    return paragraphs.join("\n\n");
+  }
+  const closing = paragraphs.findIndex((paragraph) => /^Thank you for taking the time/.test(paragraph));
+  const paragraph = opener ? `${opener} ${composed}` : composed;
+  if (closing > 0) paragraphs.splice(closing, 0, paragraph);
+  else paragraphs.push(paragraph);
+  return paragraphs.join("\n\n");
 }

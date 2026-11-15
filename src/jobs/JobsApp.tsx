@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { callHelper, helperInstalled, onHelperPush, type HelperJob, type HelperState, type JobDetails } from "./helper";
-import { writeStatement, type CriterionResult } from "./statementWriter";
+import { addExampleToStatement, cleanJob, composeExample, writeStatement, type CriterionResult } from "./statementWriter";
 
 // Jobs: a daily list of new NHS jobs (found by the Chrome helper on her laptop), a preview of
 // everything that will go into the application, and one tap to have it filled in on Trac.
@@ -13,8 +13,26 @@ type JobsStore = { profile: Profile; skipped: Record<string, true>; drafts: Reco
 
 const emptyStore: JobsStore = { profile: { previousStatement: "", aboutMe: "", alwaysMention: "" }, skipped: {}, drafts: {} };
 
+// Keeps a safety copy of her details for each of the last 3 days she used Jobs.
+function keepSafetyCopy(raw: string | null) {
+  if (!raw) return;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const key = `${STORAGE_KEY}:backup:${today}`;
+    if (!localStorage.getItem(key)) localStorage.setItem(key, raw);
+    Object.keys(localStorage)
+      .filter((item) => item.startsWith(`${STORAGE_KEY}:backup:`))
+      .sort()
+      .slice(0, -3)
+      .forEach((item) => localStorage.removeItem(item));
+  } catch {
+    // Storage full or blocked: nothing to do.
+  }
+}
+
 function loadStore(): JobsStore {
   try {
+    keepSafetyCopy(localStorage.getItem(STORAGE_KEY));
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
     return parsed ? { ...emptyStore, ...parsed, profile: { ...emptyStore.profile, ...parsed.profile } } : emptyStore;
   } catch {
@@ -84,7 +102,7 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
   }
 
   const lists = useMemo(() => {
-    const jobs = helper?.jobs ?? [];
+    const jobs = (helper?.jobs ?? []).map(cleanJob);
     const applications = helper?.applications ?? {};
     return {
       new: jobs.filter((job) => !store.skipped[job.vacancyId] && !applications[job.vacancyId]),
@@ -104,6 +122,8 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
           saveStore({ ...store, profile });
           setView({ name: "list" });
         }}
+        onRestore={(restored) => saveStore({ ...emptyStore, ...restored, profile: { ...emptyStore.profile, ...restored.profile } })}
+        store={store}
         onForget={async (question) => {
           const answers = { ...(helper?.answers ?? {}) };
           delete answers[question];
@@ -256,7 +276,9 @@ function ProfileScreen({
   nav,
   onBack,
   onSave,
-  onForget
+  onForget,
+  onRestore,
+  store
 }: {
   profile: Profile;
   answers: Record<string, string>;
@@ -264,8 +286,35 @@ function ProfileScreen({
   onBack: () => void;
   onSave: (profile: Profile) => void;
   onForget: (question: string) => void;
+  onRestore: (store: JobsStore) => void;
+  store: JobsStore;
 }) {
   const [draft, setDraft] = useState(profile);
+  const [backupMessage, setBackupMessage] = useState("");
+
+  function downloadBackup() {
+    const blob = new Blob([JSON.stringify({ ...store, profile: draft }, null, 2)], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `futureme-jobs-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    setBackupMessage("Backup saved to your Downloads folder.");
+  }
+
+  async function restoreBackup(file: File | undefined) {
+    if (!file) return;
+    try {
+      const restored = JSON.parse(await file.text()) as JobsStore;
+      if (!restored?.profile || typeof restored.profile !== "object") throw new Error("not a FutureMe backup");
+      if (!window.confirm("Replace your current details with this backup?")) return;
+      onRestore(restored);
+      setDraft({ ...emptyStore.profile, ...restored.profile });
+      setBackupMessage("Restored from your backup.");
+    } catch {
+      setBackupMessage("That file isn't a FutureMe backup.");
+    }
+  }
   const remembered = Object.entries(answers);
   return (
     <main className="mobile-shell dashboard jobs-app">
@@ -291,6 +340,19 @@ function ProfileScreen({
           <textarea rows={3} value={draft.alwaysMention} onChange={(event) => setDraft({ ...draft, alwaysMention: event.target.value })} placeholder="e.g. qualifying January 2027, NIPE training" />
         </label>
         <button className="bottom-action" onClick={() => onSave(draft)}>Save my details</button>
+      </section>
+
+      <section className="task-section jobs-form">
+        <h2>Backup</h2>
+        <p className="capacity-helper">Your details are saved in Chrome on this laptop. Keep a copy too, just in case.</p>
+        <div className="jobs-toolbar">
+          <button type="button" className="secondary-action" onClick={downloadBackup}>Save a backup</button>
+          <label className="secondary-action jobs-restore">
+            Restore a backup
+            <input type="file" accept="application/json,.json" onChange={(event) => restoreBackup(event.target.files?.[0])} />
+          </label>
+        </div>
+        {backupMessage && <p className="jobs-status" role="status">{backupMessage}</p>}
       </section>
 
       <section className="task-section jobs-form">
@@ -344,11 +406,13 @@ function ApplyScreen({
   const profileMissing = !profile.previousStatement.trim() && !profile.aboutMe.trim();
 
   const [criteria, setCriteria] = useState<CriterionResult[]>([]);
+  const [usedDefaults, setUsedDefaults] = useState(false);
 
   // Written on this device from her own sentences: free and instant.
   const writeDraft = useCallback((jobDetails: JobDetails, replace = true) => {
     const result = writeStatement({ title: job.title, employer: job.employer, speciality: job.speciality, text: jobDetails.text }, profile);
     setCriteria(result.criteria);
+    setUsedDefaults(result.usedDefaults);
     if (replace) onDraftChange(result.statement);
   }, [job, profile, onDraftChange]);
 
@@ -421,11 +485,14 @@ function ApplyScreen({
           )}
         </div>
         <p className="capacity-helper">Built from your own sentences, matched to this job's person specification. Read it through and change anything that isn't quite right.</p>
+        {usedDefaults && <p className="capacity-helper">This advert's person specification is a PDF, so FutureMe used the usual nursing criteria. Open the PDF from the advert if you want to check it.</p>}
         {criteria.length > 0 && (
           <CoverageList
             criteria={criteria}
             onAdd={(criterion, example) => {
-              onExampleAdded(insertExample(draft, criterion.text, example), example);
+              const area = job.title.includes(" - ") ? job.title.split(" - ").slice(1).join(" - ") : job.speciality;
+              const sentence = composeExample(criterion.text, example, draft, area);
+              onExampleAdded(addExampleToStatement(draft, criterion.text, sentence), sentence);
               setCriteria((list) => list.map((item) => (item.text === criterion.text ? { ...item, covered: true } : item)));
             }}
           />
@@ -507,20 +574,6 @@ function AddExample({ criterion, onAdd }: { criterion: CriterionResult; onAdd: (
       <button type="submit" className="secondary-action" disabled={!text.trim()}>Add</button>
     </form>
   );
-}
-
-// Puts her new example where it belongs: in place of the matching [prompt] if there is one,
-// otherwise just before the closing paragraph.
-function insertExample(statement: string, criterionText: string, example: string) {
-  const prompt = `[Add an example showing: ${criterionText.replace(/\.$/, "").toLowerCase()}]`;
-  if (statement.includes(prompt)) return statement.replace(prompt, example);
-  const paragraphs = statement.split("\n\n");
-  const closing = paragraphs.findIndex((paragraph) => /^Thank you for taking the time/.test(paragraph));
-  if (closing > 0) {
-    paragraphs[closing - 1] = `${paragraphs[closing - 1]} ${example}`;
-    return paragraphs.join("\n\n");
-  }
-  return statement.trim() ? `${statement.trim()} ${example}` : example;
 }
 
 function statusLabel(status: string) {
