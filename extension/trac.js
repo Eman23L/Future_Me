@@ -37,6 +37,33 @@
     return clickables(root).find((el) => pattern.test(text(el) || el.value || ""));
   }
 
+  const isDisabled = (el) =>
+    el.disabled || el.getAttribute("aria-disabled") === "true" || /\bdisabled\b/i.test(el.className || "");
+
+  // A description of the page (button and question names only, never her answers) to send Emmanuel.
+  function pageReport() {
+    const buttons = clickables().map((el) => `${el.tagName.toLowerCase()}${isDisabled(el) ? " (disabled)" : ""}: ${(text(el) || el.value || "").slice(0, 60)}`);
+    const fields = [...document.querySelectorAll("input, textarea, select")]
+      .filter((field) => visible(field) && field.type !== "hidden")
+      .map((field) => `${field.tagName.toLowerCase()}[${field.type || ""}]: ${labelFor(field).slice(0, 80)}`);
+    const headings = [...document.querySelectorAll("h1, h2, h3, h4, legend")].filter(visible).map((el) => text(el).slice(0, 80));
+    return JSON.stringify({ url: location.pathname, kind: pageKind(), headings, buttons: buttons.slice(0, 80), fields: fields.slice(0, 60) }, null, 1);
+  }
+
+  function reportButton() {
+    return {
+      label: "Copy details for Emmanuel",
+      onClick: async () => {
+        try {
+          await navigator.clipboard.writeText(pageReport());
+          showPanel("Copied. Paste it in a message to Emmanuel. It only has the page's button and question names, not your answers.", { tone: "help", actions: [carryOnButton()] });
+        } catch {
+          showPanel("Couldn't copy. Take a screenshot instead.", { tone: "help", actions: [carryOnButton()] });
+        }
+      }
+    };
+  }
+
   function safeClick(el) {
     const label = text(el) || el.value || "";
     // The one thing it must never do.
@@ -187,7 +214,10 @@
       if (field.type === "checkbox") {
         const answer = memory[normalise(label)];
         if (answer === "yes" && !field.checked) field.click();
-        if (answer === "no" && field.checked) field.click();
+        else if (answer === "no" && field.checked) field.click();
+        else if (answer === undefined && !field.checked && (field.required || /\*|i (have read|agree|confirm|declare)/i.test(label))) {
+          unknown.push({ field, question: label, kind: "checkbox" });
+        }
         continue;
       }
       if (String(field.value || "").trim()) continue; // already filled (copied from her last application)
@@ -226,7 +256,9 @@
     const learned = {};
     for (const item of waitingForHer) {
       (item.group || [item.field]).forEach((el) => el.classList.remove("futureme-needs-you"));
-      if (item.kind === "radio") {
+      if (item.kind === "checkbox") {
+        learned[normalise(item.question)] = item.field.checked ? "yes" : "no";
+      } else if (item.kind === "radio") {
         const chosen = item.group.find((radio) => radio.checked);
         if (chosen) learned[normalise(item.question)] = optionLabel(chosen);
       } else if (item.field instanceof HTMLSelectElement) {
@@ -250,19 +282,9 @@
     if (/application (has been|was) (successfully )?submitted|thank you for (submitting|your application)/i.test(body)) return "submitted";
     if (findButton(/^continue draft$/i)) return "draft";
     if (findButton(/^launch application$/i)) return "start";
+    if (findButton(/^continue$/i) && document.querySelector("select, input[type=radio], input[type=checkbox]") && /start your application|following questions|immigration status|privacy notice/i.test(body)) return "prescreen";
     if (findButton(/mark section as complete|^save & next$|^edit section$/i)) return "form";
     return "other";
-  }
-
-  function sections() {
-    // A section is the card that holds a "Mark section as complete" / "Edit section" button.
-    return clickables()
-      .filter((el) => /mark section as complete|^edit section$/i.test(text(el)))
-      .map((button) => {
-        let card = button.parentElement;
-        while (card && card !== document.body && !/in progress|complete|not started/i.test(text(card).slice(0, 40))) card = card.parentElement;
-        return { button, card: card || button.parentElement, done: /^edit section$/i.test(text(button)) };
-      });
   }
 
   async function step() {
@@ -300,8 +322,20 @@
       return "continue";
     }
 
+    if (kind === "prescreen") {
+      showPanel("Answering the questions before your application…", { actions: [pauseButton()] });
+      const button = findButton(/^continue$/i);
+      const container = button.closest("form") || document.querySelector("main") || document.body;
+      const unknown = fillForm(container);
+      if (unknown.length) { askHer(unknown); return "stop"; }
+      await sleep(SLOW);
+      safeClick(button);
+      await waitUntilIdle();
+      return "continue";
+    }
+
     if (kind !== "form") {
-      showPanel("Waiting for the application to open…");
+      showPanel("I'm not sure what to do on this page. If it's part of your application, fill it in and press Carry on.", { tone: "help", actions: [carryOnButton(), reportButton()] });
       return "stop";
     }
 
@@ -313,7 +347,7 @@
       const form = openForm();
       const unknown = form ? fillForm(form) : [];
       if (unknown.length) { askHer(unknown); return "stop"; }
-      showPanel("Trac says something on this page needs fixing. Please check the highlighted part, then press Carry on.", { tone: "help", actions: [carryOnButton()] });
+      showPanel("Trac says something on this page needs fixing. Please check the highlighted part, then press Carry on.", { tone: "help", actions: [carryOnButton(), reportButton()] });
       return "stop";
     }
     const closePopup = [...document.querySelectorAll("body *")].some(
@@ -338,29 +372,31 @@
       return "continue";
     }
 
-    // Next unfinished section: open its first unanswered question, or mark it complete.
-    const pending = sections().filter((section) => !section.done);
-    if (!pending.length) {
-      showPanel("All done! Please read through your application, then press Submit yourself. 💖", { tone: "done" });
-      await send("applicationStatus", { vacancyId: application?.vacancyId, status: "ready" });
+    // Work down the page: an enabled "Mark section as complete" before the next "Open" belongs to a
+    // section that's finished, so mark it; otherwise open the next unanswered question.
+    const openers = clickables().filter((el) => /^open$/i.test(text(el)));
+    const markers = clickables().filter((el) => /mark section as complete/i.test(text(el)) && !isDisabled(el));
+    const nextOpener = openers[0];
+    const readyMarker = markers.find((marker) => !nextOpener || (marker.compareDocumentPosition(nextOpener) & Node.DOCUMENT_POSITION_FOLLOWING));
+    if (readyMarker) {
+      showPanel("Marking this section complete…", { actions: [pauseButton()] });
+      safeClick(readyMarker);
+      await waitUntilIdle();
+      return "continue";
+    }
+    if (nextOpener) {
+      showPanel("Going through your application…", { actions: [pauseButton()] });
+      safeClick(nextOpener);
+      await waitUntilIdle();
+      return "continue";
+    }
+    const stuck = clickables().some((el) => /mark section as complete/i.test(text(el)) && isDisabled(el));
+    if (stuck) {
+      showPanel("A section can't be marked complete yet. Please have a look for anything unanswered, then press Carry on.", { tone: "help", actions: [carryOnButton(), reportButton()] });
       return "stop";
     }
-    const section = pending[0];
-    const opener = clickables(section.card).find((el) => /^open$/i.test(text(el)));
-    if (opener) {
-      showPanel("Going through your application…", { actions: [pauseButton()] });
-      safeClick(opener);
-      await waitUntilIdle();
-      return "continue";
-    }
-    if (!section.button.disabled) {
-      showPanel("Marking this section complete…", { actions: [pauseButton()] });
-      safeClick(section.button);
-      await waitUntilIdle();
-      return "continue";
-    }
-    showPanel("This section needs something I can't do. Please have a look, then press Carry on.", { tone: "help", actions: [carryOnButton()] });
-    section.card.scrollIntoView({ block: "center", behavior: "smooth" });
+    showPanel("All done! Please read through your application, then press Submit yourself. 💖", { tone: "done" });
+    await send("applicationStatus", { vacancyId: application?.vacancyId, status: "ready" });
     return "stop";
   }
 
@@ -382,9 +418,9 @@
         const result = await step();
         if (result === "stop") break;
       }
-      if (steps >= MAX_STEPS) showPanel("I've stopped to be safe. Please check the page and carry on yourself.", { tone: "help" });
+      if (steps >= MAX_STEPS) showPanel("I've stopped to be safe. Please check the page and carry on yourself.", { tone: "help", actions: [reportButton()] });
     } catch (error) {
-      showPanel(`I stopped: ${error.message}. You can carry on by hand.`, { tone: "help" });
+      showPanel(`I stopped: ${error.message}. You can carry on by hand.`, { tone: "help", actions: [carryOnButton(), reportButton()] });
     } finally {
       running = false;
     }
