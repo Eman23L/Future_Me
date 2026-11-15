@@ -7,6 +7,14 @@ import { addExampleToStatement, cleanJob, composeExample, coverageOf, writeState
 
 const STORAGE_KEY = "future-me:jobs:v1";
 const WORD_LIMIT = 1500;
+// Bump with extension/manifest.json so she's told when the Chrome helper needs updating.
+const LATEST_HELPER_VERSION = "0.3.0";
+const olderVersion = (have: string, want: string) => {
+  const a = have.split(".").map(Number);
+  const b = want.split(".").map(Number);
+  for (let i = 0; i < 3; i += 1) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) < (b[i] || 0);
+  return false;
+};
 
 type Profile = { previousStatement: string; aboutMe: string; alwaysMention: string };
 type JobsStore = { profile: Profile; skipped: Record<string, true>; drafts: Record<string, string> };
@@ -181,6 +189,16 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
             <button className="secondary-action" onClick={refresh} disabled={Boolean(busy)}>{busy || "Check for new jobs"}</button>
             <button className="secondary-action" onClick={() => setView({ name: "profile" })}>Your details</button>
           </div>
+          {helper && olderVersion(helper.version, LATEST_HELPER_VERSION) && (
+            <section className="reminder-banner" role="status">
+              <strong>Update the job helper</strong>
+              <span>
+                1. <a href="/downloads/futureme-job-helper.zip" download>Download the new version</a> and unzip it into the same place as before, replacing the old files.
+                2. Go to <code>chrome://extensions</code> and click the ↻ reload arrow on FutureMe Job Helper.
+                Don't remove it, or it forgets the answers it remembered.
+              </span>
+            </section>
+          )}
           {profileMissing && (
             <section className="reminder-banner" role="status">
               <strong>Add your details first</strong>
