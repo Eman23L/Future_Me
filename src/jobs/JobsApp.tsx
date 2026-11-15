@@ -407,12 +407,14 @@ function ApplyScreen({
 
   const [criteria, setCriteria] = useState<CriterionResult[]>([]);
   const [usedDefaults, setUsedDefaults] = useState(false);
+  const [values, setValues] = useState<string[]>([]);
 
   // Written on this device from her own sentences: free and instant.
   const writeDraft = useCallback((jobDetails: JobDetails, replace = true) => {
     const result = writeStatement({ title: job.title, employer: job.employer, speciality: job.speciality, text: jobDetails.text }, profile);
     setCriteria(result.criteria);
     setUsedDefaults(result.usedDefaults);
+    setValues(result.values);
     if (replace) onDraftChange(result.statement);
   }, [job, profile, onDraftChange]);
 
@@ -485,6 +487,15 @@ function ApplyScreen({
           )}
         </div>
         <p className="capacity-helper">Built from your own sentences, matched to this job's person specification. Read it through and change anything that isn't quite right.</p>
+        {draft.trim() && (
+          <ClaudePolish
+            job={job}
+            criteria={criteria}
+            values={values}
+            statement={draft}
+            onUse={(polished) => onDraftChange(polished)}
+          />
+        )}
         {usedDefaults && <p className="capacity-helper">This advert's person specification is a PDF, so FutureMe used the usual nursing criteria. Open the PDF from the advert if you want to check it.</p>}
         {criteria.length > 0 && (
           <CoverageList
@@ -523,6 +534,122 @@ function ApplyScreen({
       </button>
       {nav}
     </main>
+  );
+}
+
+// Uses her own Claude subscription: FutureMe copies a ready-made request and opens Claude;
+// she pastes it, copies Claude's reply, and FutureMe puts it in the box. Nothing is sent by FutureMe.
+function ClaudePolish({
+  job,
+  criteria,
+  values,
+  statement,
+  onUse
+}: {
+  job: HelperJob;
+  criteria: CriterionResult[];
+  values: string[];
+  statement: string;
+  onUse: (statement: string) => void;
+}) {
+  const [step, setStep] = useState<"idle" | "waiting" | "paste">("idle");
+  const [pasted, setPasted] = useState("");
+  const [message, setMessage] = useState("");
+
+  function request() {
+    const essential = criteria.filter((criterion) => criterion.essential).map((criterion) => `- ${criterion.text}`);
+    const desirable = criteria.filter((criterion) => !criterion.essential).map((criterion) => `- ${criterion.text}`);
+    return [
+      `Please polish my supporting statement for an NHS job application. Rewrite it so it reads as one fluent, well-organised statement in my voice.`,
+      ``,
+      `Job: ${job.title} at ${job.employer}${job.band ? ` (${job.band})` : ""}`,
+      essential.length ? `\nEssential criteria:\n${essential.join("\n")}` : "",
+      desirable.length ? `\nDesirable criteria:\n${desirable.join("\n")}` : "",
+      values.length ? `\nThe trust's values: ${values.join(", ")}` : "",
+      ``,
+      `Rules:`,
+      `- Use only the facts, experience and examples in my statement below. Do not add any experience, skills, qualifications, dates or results I haven't mentioned.`,
+      `- Keep every real example, and show clearly how they meet the criteria above.`,
+      `- Keep it warm, personal and in the first person. UK English.`,
+      `- Plain paragraphs only: no headings, bullet points, bold or markdown.`,
+      `- About 600-900 words, never more than 1500.`,
+      `- If something in square brackets is still there, keep it in square brackets.`,
+      `- Reply with only the finished statement, nothing before or after it.`,
+      ``,
+      `My statement:`,
+      statement.trim()
+    ].filter((line) => line !== "").join("\n");
+  }
+
+  async function openClaude() {
+    setMessage("");
+    try {
+      await navigator.clipboard.writeText(request());
+    } catch {
+      setMessage("Couldn't copy automatically. Click in this page and try again.");
+      return;
+    }
+    window.open("https://claude.ai/new", "_blank", "noopener");
+    setStep("waiting");
+  }
+
+  function use(text: string) {
+    const cleaned = text
+      .replace(/\r/g, "")
+      .replace(/^#+\s*/gm, "")
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/^\s*[-*•]\s+/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (cleaned.split(/\s+/).length < 80) {
+      setMessage("That doesn't look like the full statement. Copy Claude's whole reply and try again.");
+      return;
+    }
+    if (!window.confirm("Replace the statement with Claude's version? Read it through before applying.")) return;
+    onUse(cleaned);
+    setStep("idle");
+    setPasted("");
+    setMessage("Claude's version is in. Read it through and check every detail is true.");
+  }
+
+  async function useClipboard() {
+    try {
+      use(await navigator.clipboard.readText());
+    } catch {
+      setStep("paste");
+    }
+  }
+
+  return (
+    <div className="jobs-claude">
+      {step === "idle" && (
+        <button type="button" className="secondary-action" onClick={openClaude}>✨ Polish with Claude</button>
+      )}
+      {step !== "idle" && (
+        <ol>
+          <li>In Claude, paste (<strong>Ctrl+V</strong>, or <strong>⌘V</strong> on a Mac) and press Enter.</li>
+          <li>When it's finished, click Claude's <strong>Copy</strong> button under its reply.</li>
+          <li>Come back here and click <strong>Use Claude's version</strong>.</li>
+        </ol>
+      )}
+      {step === "waiting" && (
+        <div className="jobs-claude-actions">
+          <button type="button" className="bottom-action" onClick={useClipboard}>Use Claude's version</button>
+          <button type="button" className="secondary-action" onClick={openClaude}>Copy request again</button>
+          <button type="button" className="secondary-action" onClick={() => setStep("idle")}>Cancel</button>
+        </div>
+      )}
+      {step === "paste" && (
+        <>
+          <textarea rows={6} value={pasted} onChange={(event) => setPasted(event.target.value)} placeholder="Paste Claude's reply here" aria-label="Claude's reply" />
+          <div className="jobs-claude-actions">
+            <button type="button" className="bottom-action" onClick={() => use(pasted)} disabled={!pasted.trim()}>Use this version</button>
+            <button type="button" className="secondary-action" onClick={() => setStep("idle")}>Cancel</button>
+          </div>
+        </>
+      )}
+      {message && <p className="jobs-status" role="status">{message}</p>}
+    </div>
   );
 }
 
