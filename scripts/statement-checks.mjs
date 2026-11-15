@@ -1,5 +1,5 @@
 // Checks the free statement writer on a realistic advert and a made-up applicant.
-import { addExampleToStatement, cleanJob, composeExample, readPersonSpec, readValues, writeStatement } from "../build-src/jobs/statementWriter.js";
+import { addExampleToStatement, cleanJob, composeExample, coverageOf, readPersonSpec, readValues, writeStatement } from "../build-src/jobs/statementWriter.js";
 
 const advert = `Staff Nurse - Endoscopy
 Working for our organisation
@@ -118,4 +118,14 @@ assert(skills.startsWith("I have strong verbal, written and interpersonal commun
 const placed = addExampleToStatement(result.statement, "Ability to challenge unacceptable behaviour", woven);
 const skillsParagraph = placed.split("\n\n").find((paragraph) => paragraph.startsWith("Good communication and teamwork"));
 assert(skillsParagraph && skillsParagraph.includes("I am able to challenge"), "example should go into the paragraph about the same topic");
+// The checklist re-checks the statement as it is now (after her edits or Claude's version).
+const edited = `I am delighted to apply for the post of Endoscopy Staff Nurse. I am fluent and confident in using IT systems such as HIVE and Epic to access and update electronic patient records. I am trained in basic life support including recognising cardiac arrest and using an external defibrillator.
+I have good time management and organisational skills with the ability to prioritise tasks and manage competing workloads. I am confident in communicating opinions, concerns and professional decisions clearly and respectfully, and I am able to speak up for patients and challenge concerns appropriately. I make informed decisions using clinical knowledge and professional judgement, and I think creatively to find practical solutions.`;
+const listed = ["Basic IT skills", "Good management of time", "Assertiveness", "Decision maker/Problem solver", "Basic Life Support", "Ability to prioritise", "Experience of team and ward management"].map((text) => ({ text, essential: true, category: "skills" }));
+const live = coverageOf(edited, listed, "Endoscopy");
+const status = Object.fromEntries(live.map((item) => [item.text, item.covered]));
+for (const text of listed.slice(0, 6).map((item) => item.text)) assert(status[text], `"${text}" should show as covered once it's in the statement`);
+assert(!status["Experience of team and ward management"], "things not in the statement should still show as missing");
+assert(!coverageOf("Good communication and teamwork are at the heart of safe, compassionate care. Thank you for taking the time to consider my application.", [{ text: "Excellent communication skills", essential: true, category: "skills" }])[0].covered, "FutureMe's own linking lines don't count as evidence");
+assert(!coverageOf("I would love to do it and make it work for it.", [{ text: "Basic IT skills", essential: true, category: "skills" }])[0].covered, "the word 'it' is not IT skills");
 console.log("\nStatement checks passed.");

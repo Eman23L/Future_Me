@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { callHelper, helperInstalled, onHelperPush, type HelperJob, type HelperState, type JobDetails } from "./helper";
-import { addExampleToStatement, cleanJob, composeExample, writeStatement, type CriterionResult } from "./statementWriter";
+import { addExampleToStatement, cleanJob, composeExample, coverageOf, writeStatement, type CriterionResult } from "./statementWriter";
 
 // Jobs: a daily list of new NHS jobs (found by the Chrome helper on her laptop), a preview of
 // everything that will go into the application, and one tap to have it filled in on Trac.
@@ -405,7 +405,10 @@ function ApplyScreen({
   const [opening, setOpening] = useState(false);
   const profileMissing = !profile.previousStatement.trim() && !profile.aboutMe.trim();
 
-  const [criteria, setCriteria] = useState<CriterionResult[]>([]);
+  const [specCriteria, setCriteria] = useState<CriterionResult[]>([]);
+  const area = job.title.includes(" - ") ? job.title.split(" - ").slice(1).join(" - ") : job.speciality;
+  // Re-checked against the statement as it is now (after edits, added examples or Claude's version).
+  const criteria = useMemo(() => coverageOf(draft, specCriteria, area), [draft, specCriteria, area]);
   const [usedDefaults, setUsedDefaults] = useState(false);
   const [values, setValues] = useState<string[]>([]);
 
@@ -501,10 +504,8 @@ function ApplyScreen({
           <CoverageList
             criteria={criteria}
             onAdd={(criterion, example) => {
-              const area = job.title.includes(" - ") ? job.title.split(" - ").slice(1).join(" - ") : job.speciality;
               const sentence = composeExample(criterion.text, example, draft, area);
               onExampleAdded(addExampleToStatement(draft, criterion.text, sentence), sentence);
-              setCriteria((list) => list.map((item) => (item.text === criterion.text ? { ...item, covered: true } : item)));
             }}
           />
         )}
