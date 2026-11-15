@@ -23,11 +23,14 @@ const THEMES: Record<string, RegExp> = {
   audit: /audit|research|evidence[- ]based|literature|quality improvement|\bqi\b|review/i,
   learning: /learn|develop|training|\bcpd\b|continuing professional|course|study|stud(ent|ying)|msc|degree|qualif|preceptor|competenc|reflect/i,
   leadership: /\blead|mentor|supervis|teach|educat|delegat|coordinat|in charge/i,
-  organisation: /prioriti|workload|time management|organis|pressure|busy|independent(ly)?|manage my own|deadlines?/i,
-  clinical: /observation|venepunctur|cannul|\becg|medicat|drug|wound|assessment|deteriorat|news2?|clinical skills|point[- ]of[- ]care|catheter|bloods|vital signs/i,
+  organisation: /prioriti|workload|time management|manag(e|ing) (my )?time|organis|pressure|busy|independent(ly)?|manage my own|deadlines?/i,
+  clinical: /basic life support|\bBLS\b|\bILS\b|resus|cardiac arrest|defibrillat|observation|venepunctur|cannul|\becg|medicat|drug|wound|assessment|deteriorat|news2?|clinical skills|point[- ]of[- ]care|catheter|bloods|vital signs/i,
   safeguarding: /safeguard|vulnerab|protect/i,
   diversity: /diversit|inclusi|equalit|culture|background/i,
-  digital: /computer|\bit\b|digital|electronic|system|software|record(s|ing)?|documentation/i,
+  // Case-sensitive so "IT" matches but the word "it" doesn't.
+  digital: /[Cc]omputer|\bIT\b|[Dd]igital|[Ee]lectronic|[Ss]ystems?\b|[Ss]oftware|[Rr]ecords?\b|[Dd]ocumentation|Microsoft|\bEpic\b|HIVE|EPR|[Ee]-?mail/,
+  assertiveness: /assertiv|advocat|speak(ing)? up|challeng|raise concerns?|raising concerns|confident(ly)? (voic|express|communicat)|professional boundaries/i,
+  decisions: /decision|problem[- ]solv|solv(e|ing) problems|judg(e)?ment|initiative|think creatively|practical solutions/i,
   registration: /\bnmc\b|registration|registered|\brn\b|\brm\b|nurse qualification|midwi(fe|very) qualification|pin\b/i,
   flexibility: /flexib|adapt|positive|resilien|enthusias|motivat/i,
   maternity: /midwi|maternity|antenatal|postnatal|labour|birth|pregnan|newborn|nipe/i,
@@ -411,4 +414,33 @@ export function addExampleToStatement(statement: string, criterion: string, comp
   if (closing > 0) paragraphs.splice(closing, 0, paragraph);
   else paragraphs.push(paragraph);
   return paragraphs.join("\n\n");
+}
+
+// ---------- live checklist ----------
+// Works out which criteria the statement covers *now*, from its actual text, so the checklist stays
+// right after she edits it, adds examples or uses Claude's version.
+const OUR_LINES = [
+  /^I am delighted to apply for the post of/,
+  /^Thank you for taking the time/,
+  /^I would welcome the opportunity/,
+  /values of .+ reflect the kind of professional I want to be/,
+  /^I am keen to develop my practice in/,
+  ...Object.values(OPENERS).map((opener) => new RegExp(`^${(opener as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`))
+];
+
+export function coverageOf(statement: string, criteria: Criterion[], area = ""): CriterionResult[] {
+  const evidence = statement
+    .replace(/\[[^\]]*\]/g, " ")
+    .split(/\n+|(?<=[.!?])\s+/)
+    .map((text) => text.trim())
+    .filter((text) => text.split(/\s+/).length >= 4 && !OUR_LINES.some((pattern) => pattern.test(text)))
+    .map((text, order) => ({ text, tokens: tokens(text), themes: themesOf(text), order }));
+  return criteria.map((criterion) => {
+    const text = /relevant (speciality|specialty|area|field|setting)|this (area|speciality|specialty)|the speciality/i.test(criterion.text)
+      ? `${criterion.text} ${area}`
+      : criterion.text;
+    const target = { tokens: tokens(text), themes: themesOf(text) };
+    const best = Math.max(0, ...evidence.map((sentence) => score(target, sentence)));
+    return { ...criterion, covered: best >= 4 };
+  });
 }
