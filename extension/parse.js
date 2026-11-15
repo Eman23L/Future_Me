@@ -60,6 +60,18 @@ function jobContainer(link, vacancyId) {
   return node;
 }
 
+// Links like "More" or "Read more" aren't job titles.
+const GENERIC_LINK = /^(more|more\.{3}|read more|see more|find out more|view|view job|details|apply( now| online)?|click here|here|next|previous|\d+)$/i;
+
+function inFeaturedBox(link) {
+  // HealthJobsUK's "Featured jobs" sidebar lists jobs from any sector; only the search results count.
+  for (let node = link.parentElement, depth = 0; node && depth < 10; node = node.parentElement, depth += 1) {
+    const heading = node.querySelector("h1, h2, h3, h4, strong, .title, [class*=heading]");
+    if (heading && /featured jobs?/i.test(heading.textContent || "") && node.contains(link) && node.querySelectorAll("a[href]").length < 40) return true;
+  }
+  return false;
+}
+
 function parseJobList(doc, baseUrl) {
   const jobs = new Map();
   for (const link of doc.querySelectorAll("a[href]")) {
@@ -67,12 +79,15 @@ function parseJobList(doc, baseUrl) {
     const match = href.match(JOB_LINK);
     if (!match) continue;
     const vacancyId = match[1];
-    if (jobs.has(vacancyId)) continue;
+    if (jobs.has(vacancyId) || inFeaturedBox(link)) continue;
+    const linkTitle = linesOf(link)[0] || "";
+    if (!linkTitle || GENERIC_LINK.test(linkTitle)) continue;
     const container = jobContainer(link, vacancyId);
     const lines = linesOf(container);
+    // Search results always show a salary or band; anything else is a stray link.
+    if (!/salary|band\s*\d|£/i.test(lines.join(" "))) continue;
     // On HealthJobsUK the whole job card can be one link, so take only its first line as the title.
-    const title = linesOf(link)[0] || lines[0] || "";
-    if (!title) continue;
+    const title = linkTitle;
     const titleIndex = lines.findIndex((line) => line.includes(title));
     const employerLine = lines.find((line, index) =>
       index > titleIndex && !/^(Speciality|Salary|Band|NHS AfC)/i.test(line) && !/Band\s*\d/i.test(line) && line !== lines[titleIndex]

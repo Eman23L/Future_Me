@@ -8,7 +8,7 @@ import { addExampleToStatement, cleanJob, composeExample, coverageOf, writeState
 const STORAGE_KEY = "future-me:jobs:v1";
 const WORD_LIMIT = 1500;
 // Bump with extension/manifest.json so she's told when the Chrome helper needs updating.
-const LATEST_HELPER_VERSION = "0.3.0";
+const LATEST_HELPER_VERSION = "0.4.0";
 const olderVersion = (have: string, want: string) => {
   const a = have.split(".").map(Number);
   const b = want.split(".").map(Number);
@@ -17,7 +17,11 @@ const olderVersion = (have: string, want: string) => {
 };
 
 type Profile = { previousStatement: string; aboutMe: string; alwaysMention: string };
-type JobsStore = { profile: Profile; skipped: Record<string, true>; drafts: Record<string, string> };
+type JobsStore = { profile: Profile; skipped: Record<string, true>; drafts: Record<string, string>; nursingOnly?: boolean };
+
+// Stray links saved by older helper versions ("More", "Read more") aren't jobs.
+const notAJob = (job: HelperJob) => !job.title.trim() || /^(more|more\.{3}|read more|see more|find out more|view|details|apply( now| online)?)$/i.test(job.title.trim());
+const NURSING = /nurs|midwi|\bRN\b|\bRMN\b|\bRGN\b|\bRNLD\b|sister|charge nurse|health visitor|neonatal|scrub|theatre practitioner|preceptor/i;
 
 const emptyStore: JobsStore = { profile: { previousStatement: "", aboutMe: "", alwaysMention: "" }, skipped: {}, drafts: {} };
 
@@ -110,14 +114,15 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
   }
 
   const lists = useMemo(() => {
-    const jobs = (helper?.jobs ?? []).map(cleanJob);
+    const nursingOnly = store.nursingOnly !== false;
+    const jobs = (helper?.jobs ?? []).map(cleanJob).filter((job) => !notAJob(job) && (!nursingOnly || NURSING.test(job.title)));
     const applications = helper?.applications ?? {};
     return {
       new: jobs.filter((job) => !store.skipped[job.vacancyId] && !applications[job.vacancyId]),
       applying: jobs.filter((job) => applications[job.vacancyId]),
       skipped: jobs.filter((job) => store.skipped[job.vacancyId] && !applications[job.vacancyId])
     };
-  }, [helper, store.skipped]);
+  }, [helper, store.skipped, store.nursingOnly]);
 
   if (view.name === "profile") {
     return (
@@ -210,6 +215,10 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
           )}
           {error && <p className="jobs-error" role="alert">{error}</p>}
 
+          <label className="jobs-toggle">
+            <input type="checkbox" checked={store.nursingOnly !== false} onChange={(event) => saveStore({ ...store, nursingOnly: event.target.checked })} />
+            Nursing &amp; midwifery jobs only
+          </label>
           <div className="pill-row jobs-filter" role="tablist">
             {(["new", "applying", "skipped"] as Filter[]).map((key) => (
               <button key={key} role="tab" aria-selected={filter === key} className={filter === key ? "option-pill selected" : "option-pill"} onClick={() => setFilter(key)}>
