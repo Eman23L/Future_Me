@@ -8,7 +8,7 @@ import { addExampleToStatement, cleanJob, composeExample, coverageOf, writeState
 const STORAGE_KEY = "future-me:jobs:v1";
 const WORD_LIMIT = 1500;
 // Bump with extension/manifest.json so she's told when the Chrome helper needs updating.
-const LATEST_HELPER_VERSION = "0.4.0";
+const LATEST_HELPER_VERSION = "0.5.0";
 const olderVersion = (have: string, want: string) => {
   const a = have.split(".").map(Number);
   const b = want.split(".").map(Number);

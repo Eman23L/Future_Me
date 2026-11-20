@@ -14,6 +14,7 @@
   let running = false;
   let waitingForHer = null; // fields she's been asked to fill
   let steps = 0;
+  let prescreenTries = 0;
 
   // ---------- helpers ----------
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -133,6 +134,17 @@
     if (group?.getAttribute("aria-labelledby")) {
       return text(document.getElementById(group.getAttribute("aria-labelledby")));
     }
+    // Real Trac pages often put the question in a plain element before the options: take the
+    // nearest earlier text that reads like a question ("…?", "… *", "Choose…", "Please select…").
+    let node = radio;
+    for (let depth = 0; depth < 7 && node; depth += 1) {
+      for (let prev = node.previousElementSibling; prev; prev = prev.previousElementSibling) {
+        if (prev.querySelector && prev.querySelector("input[type=radio]")) continue;
+        const value = text(prev);
+        if (value && value.length <= 250 && /\?|\*|^(choose|select|please (select|indicate|choose|confirm))/i.test(value)) return value;
+      }
+      node = node.parentElement;
+    }
     return labelFor(radio.closest("[role=radiogroup], fieldset") || radio);
   }
 
@@ -143,6 +155,20 @@
     }
     return text(radio.closest("label")) || radio.value;
   }
+
+  const OWN_TRUST = /^are you (currently )?(an )?employee of (?!any other)(.+)\?$/;
+  const generalKey = (key) => (OWN_TRUST.test(key) ? "are you currently an employee of this trust?" : null);
+  const recall = (question) => {
+    const key = normalise(question);
+    if (memory[key] !== undefined) return memory[key];
+    const general = generalKey(key);
+    if (!general) return undefined;
+    if (memory[general] !== undefined) return memory[general];
+    // Answers saved before this existed: a "No" for any other trust counts too.
+    return Object.entries(memory).some(([saved, value]) => OWN_TRUST.test(saved) && /^no$/i.test(value)) ? "No" : undefined;
+  };
+  // Tick boxes that are agreements ("I have read and agree…") must never be remembered as "no".
+  const isAgreement = (label) => /i (have read|agree|confirm|declare|understand|accept)/i.test(label);
 
   const isSupportingStatement = (label) => /supporting information|supporting statement|personal statement/i.test(label);
 
@@ -199,7 +225,7 @@
         const group = fields.filter((item) => item.type === "radio" && item.name === field.name);
         if (group.some((item) => item.checked)) continue; // already answered (e.g. copied from her last application)
         const question = groupLabel(field);
-        const answer = memory[normalise(question)];
+        const answer = recall(question);
         const match = answer && group.find((item) => normalise(optionLabel(item)) === normalise(answer));
         if (match) match.click();
         else unknown.push({ field, question, kind: "radio", group });
@@ -212,16 +238,17 @@
         continue;
       }
       if (field.type === "checkbox") {
-        const answer = memory[normalise(label)];
+        let answer = recall(label);
+        if (answer === "no" && isAgreement(label)) answer = undefined; // ask again rather than leave it unticked
         if (answer === "yes" && !field.checked) field.click();
         else if (answer === "no" && field.checked) field.click();
-        else if (answer === undefined && !field.checked && (field.required || /\*|i (have read|agree|confirm|declare)/i.test(label))) {
+        else if (answer === undefined && !field.checked && (field.required || /\*/.test(label) || isAgreement(label))) {
           unknown.push({ field, question: label, kind: "checkbox" });
         }
         continue;
       }
       if (String(field.value || "").trim()) continue; // already filled (copied from her last application)
-      const answer = memory[normalise(label)];
+      const answer = recall(label);
       if (answer !== undefined && answer !== "") {
         if (field instanceof HTMLSelectElement) {
           const option = [...field.options].find((item) => normalise(item.textContent || "") === normalise(answer) || item.value === answer);
@@ -257,7 +284,8 @@
     for (const item of waitingForHer) {
       (item.group || [item.field]).forEach((el) => el.classList.remove("futureme-needs-you"));
       if (item.kind === "checkbox") {
-        learned[normalise(item.question)] = item.field.checked ? "yes" : "no";
+        if (item.field.checked) learned[normalise(item.question)] = "yes";
+        else if (!isAgreement(item.question)) learned[normalise(item.question)] = "no";
       } else if (item.kind === "radio") {
         const chosen = item.group.find((radio) => radio.checked);
         if (chosen) learned[normalise(item.question)] = optionLabel(chosen);
@@ -269,6 +297,10 @@
       }
     }
     waitingForHer = null;
+    for (const [key, value] of Object.entries(learned)) {
+      const general = generalKey(key);
+      if (general && /^no$/i.test(value)) learned[general] = value;
+    }
     if (Object.keys(learned).length) {
       memory = { ...memory, ...learned };
       await send("saveAnswers", learned);
@@ -327,7 +359,32 @@
       const button = findButton(/^continue$/i);
       const container = button.closest("form") || document.querySelector("main") || document.body;
       const unknown = fillForm(container);
-      if (unknown.length) { askHer(unknown); return "stop"; }
+      if (prescreenTries > 0 && /please correct the errors|must be answered|is required/i.test(text(document.body))) {
+        // Trac rejected it: add every field sitting next to an error message.
+        const flagged = [...container.querySelectorAll("*")]
+          .filter((el) => el.childElementCount === 0 && /must be answered|is required|please (select|enter|complete)/i.test(text(el)) && visible(el))
+          .map((message) => {
+            let box = message.parentElement;
+            while (box && box !== container && !box.querySelector("input:not([type=hidden]), select, textarea")) box = box.parentElement;
+            return box && box !== container ? box.querySelector("input:not([type=hidden]), select, textarea") : null;
+          })
+          .filter((field) => field && !unknown.some((item) => item.field === field));
+        for (const field of flagged) {
+          if (field.type === "radio") {
+            const group = [...container.querySelectorAll(`input[type=radio][name="${CSS.escape(field.name)}"]`)];
+            unknown.push({ field, question: groupLabel(field), kind: "radio", group });
+          } else {
+            unknown.push({ field, question: labelFor(field), kind: field.type === "checkbox" ? "checkbox" : "field" });
+          }
+        }
+        if (!unknown.length) {
+          showPanel("Trac says something here needs answering. Please fill in the parts marked in red, then press Carry on.", { tone: "help", actions: [carryOnButton(), reportButton()] });
+          prescreenTries = 0;
+          return "stop";
+        }
+      }
+      if (unknown.length) { prescreenTries = 0; askHer(unknown); return "stop"; }
+      prescreenTries += 1;
       await sleep(SLOW);
       safeClick(button);
       await waitUntilIdle();
