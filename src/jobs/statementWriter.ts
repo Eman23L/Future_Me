@@ -139,6 +139,8 @@ function firstPerson(line: string) {
   const heading = text.match(/^([A-Z][\w&/'’ ,-]{1,60}):\s+(.+)$/);
   if (heading && heading[1].split(/\s+/).length <= 6) text = heading[2];
   if (/^(I|My|Me|As|In|On|At|During|When|While|Since|Having|Before|After|Working|Through|This|These|Being)\b/.test(text)) return text;
+  // Already a full sentence about her ("Caring for patients… is what drives me"): leave it alone.
+  if (/\b(I|my|me|is|are|was|were)\b/.test(text)) return text;
   const lower = text.charAt(0).toLowerCase() + text.slice(1);
   if (I_AM.test(text)) return `I am ${lower}`;
   if (I_HAVE.test(text)) return `I have ${lower}`;
@@ -313,7 +315,8 @@ export function writeStatement(job: WriterJob, profile: WriterProfile): WriterRe
   if (values.length || caring) {
     const valuesParagraph: string[] = [];
     if (values.length) valuesParagraph.push(`${possessive(short)} values of ${listJoin(values.map((value) => value.replace(/\.$/, "")))} reflect the kind of professional I want to be.`);
-    if (caring) { valuesParagraph.push(caring.text); used.add(caring.order); }
+    // Without the trust's values to lead in, a lone caring sentence reads abruptly, so introduce it.
+    if (caring) { valuesParagraph.push(values.length ? caring.text : `Above all, ${lowerFirst(caring.text)}`); used.add(caring.order); }
     paragraphs.push(valuesParagraph.join(" "));
   }
 
