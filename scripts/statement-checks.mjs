@@ -128,4 +128,8 @@ for (const text of listed.slice(0, 6).map((item) => item.text)) assert(status[te
 assert(!status["Experience of team and ward management"], "things not in the statement should still show as missing");
 assert(!coverageOf("Good communication and teamwork are at the heart of safe, compassionate care. Thank you for taking the time to consider my application.", [{ text: "Excellent communication skills", essential: true, category: "skills" }])[0].covered, "FutureMe's own linking lines don't count as evidence");
 assert(!coverageOf("I would love to do it and make it work for it.", [{ text: "Basic IT skills", essential: true, category: "skills" }])[0].covered, "the word 'it' is not IT skills");
+// With no values on the advert, the closing caring sentence is introduced, not left on its own.
+const noValues = writeStatement({ title: "Staff Nurse", employer: "Example NHS Trust", text: "Person specification\nEssential criteria\nExcellent communication skills" }, { previousStatement: "I communicate clearly with patients and families every day.\nCaring for patients with dignity and compassion is what drives me every day.", aboutMe: "", alwaysMention: "" });
+assert(/Above all, caring for patients with dignity|Caring for patients with dignity/.test(noValues.statement) && !/\n\nCaring for patients with dignity and compassion is what drives me every day\.\n\nThank you/.test(noValues.statement), `lone caring sentence should be introduced: ${noValues.statement}`);
+assert(!/I am caring for patients with dignity and compassion is/.test(noValues.statement), "full sentences must not get 'I am' added");
 console.log("\nStatement checks passed.");
