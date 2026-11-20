@@ -42,6 +42,49 @@ function keepSafetyCopy(raw: string | null) {
   }
 }
 
+type SafetyCopy = { key: string; date: string; store: JobsStore };
+
+function readSafetyCopies(): SafetyCopy[] {
+  try {
+    return Object.keys(localStorage)
+      .filter((key) => key.startsWith(`${STORAGE_KEY}:backup:`))
+      .sort()
+      .reverse()
+      .map((key) => {
+        const parsed = JSON.parse(localStorage.getItem(key) || "null");
+        return parsed?.profile ? { key, date: key.slice(-10), store: { ...emptyStore, ...parsed, profile: { ...emptyStore.profile, ...parsed.profile } } } : null;
+      })
+      .filter((copy): copy is SafetyCopy => Boolean(copy));
+  } catch {
+    return [];
+  }
+}
+
+const countWords = (text: string) => (text.trim() ? text.trim().split(/\s+/).length : 0);
+
+// Adds back anything the older copy has that's missing now; never removes or replaces newer work.
+function mergeStores(current: JobsStore, older: JobsStore): JobsStore {
+  const lines = (text: string) => text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const currentLines = new Set(lines(current.profile.aboutMe));
+  const extraLines = lines(older.profile.aboutMe).filter((line) => !currentLines.has(line));
+  return {
+    ...current,
+    profile: {
+      previousStatement: current.profile.previousStatement.trim() ? current.profile.previousStatement : older.profile.previousStatement,
+      aboutMe: [...lines(current.profile.aboutMe), ...extraLines].join("\n"),
+      alwaysMention: current.profile.alwaysMention.trim() ? current.profile.alwaysMention : older.profile.alwaysMention
+    },
+    drafts: { ...older.drafts, ...Object.fromEntries(Object.entries(current.drafts).filter(([, text]) => text.trim())) },
+    skipped: { ...older.skipped, ...current.skipped }
+  };
+}
+
+// "I am delighted to apply for the post of X at Y." → "X · Y"
+function statementTitle(id: string, text: string) {
+  const match = text.match(/post of (.+?) at (.+?)\./);
+  return match ? `${match[1]} · ${match[2]}` : `Job ${id}`;
+}
+
 function loadStore(): JobsStore {
   try {
     keepSafetyCopy(localStorage.getItem(STORAGE_KEY));
@@ -137,6 +180,7 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
         }}
         onRestore={(restored) => saveStore({ ...emptyStore, ...restored, profile: { ...emptyStore.profile, ...restored.profile } })}
         store={store}
+        helper={helper}
         onForget={async (question) => {
           const answers = { ...(helper?.answers ?? {}) };
           delete answers[question];
@@ -305,7 +349,8 @@ function ProfileScreen({
   onSave,
   onForget,
   onRestore,
-  store
+  store,
+  helper
 }: {
   profile: Profile;
   answers: Record<string, string>;
@@ -315,7 +360,9 @@ function ProfileScreen({
   onForget: (question: string) => void;
   onRestore: (store: JobsStore) => void;
   store: JobsStore;
+  helper: HelperState | null;
 }) {
+  const [copies] = useState(readSafetyCopies);
   const [draft, setDraft] = useState(profile);
   const [backupMessage, setBackupMessage] = useState("");
 
@@ -380,6 +427,67 @@ function ProfileScreen({
           </label>
         </div>
         {backupMessage && <p className="jobs-status" role="status">{backupMessage}</p>}
+      </section>
+
+      <section className="task-section jobs-form">
+        <h2>Saved statements ({Object.values(store.drafts).filter((text) => text.trim()).length})</h2>
+        <p className="capacity-helper">Every supporting statement FutureMe has saved on this laptop, including jobs no longer in your list.</p>
+        {Object.entries(store.drafts).filter(([, text]) => text.trim()).length === 0 ? (
+          <div className="empty-state">No saved statements on this laptop.</div>
+        ) : (
+          <ul className="added-list">
+            {Object.entries(store.drafts).filter(([, text]) => text.trim()).map(([id, text]) => (
+              <li key={id}>
+                <span><strong>{statementTitle(id, text)}</strong><br />{countWords(text)} words</span>
+                <button type="button" onClick={async () => {
+                  try { await navigator.clipboard.writeText(text); setBackupMessage("Statement copied."); } catch { setBackupMessage("Couldn't copy. Try again."); }
+                }}>Copy</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="task-section jobs-form">
+        <h2>Recover from an automatic copy</h2>
+        <p className="capacity-helper">FutureMe keeps a copy of your details from each of the last 3 days you used Jobs. Recover adds back anything missing (statements and example lines). It never deletes newer work.</p>
+        {copies.length === 0 ? (
+          <div className="empty-state">No automatic copies on this laptop yet.</div>
+        ) : (
+          <ul className="added-list">
+            {copies.map((copy) => (
+              <li key={copy.key}>
+                <span>
+                  <strong>{copy.date}</strong><br />
+                  {Object.values(copy.store.drafts).filter((text) => text.trim()).length} statements · {countWords(copy.store.profile.aboutMe)} words of examples · {countWords(copy.store.profile.previousStatement)} words of previous statement
+                </span>
+                <button type="button" onClick={() => {
+                  const merged = mergeStores({ ...store, profile: draft }, copy.store);
+                  const addedStatements = Object.keys(merged.drafts).length - Object.keys(store.drafts).filter((id) => store.drafts[id].trim()).length;
+                  const addedWords = countWords(merged.profile.aboutMe) - countWords(draft.aboutMe);
+                  onRestore(merged);
+                  setDraft(merged.profile);
+                  setBackupMessage(addedStatements > 0 || addedWords > 0 ? `Recovered ${Math.max(addedStatements, 0)} statement(s) and ${Math.max(addedWords, 0)} words of examples.` : "Nothing was missing from that copy.");
+                }}>Recover</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button type="button" className="secondary-action" onClick={async () => {
+          const report = {
+            futureme: {
+              previousStatementWords: countWords(store.profile.previousStatement),
+              examplesWords: countWords(store.profile.aboutMe),
+              savedStatements: Object.entries(store.drafts).filter(([, text]) => text.trim()).map(([id, text]) => ({ id, words: countWords(text) })),
+              skipped: Object.keys(store.skipped).length,
+              safetyCopies: copies.map((copy) => ({ date: copy.date, statements: Object.values(copy.store.drafts).filter((text) => text.trim()).length, examplesWords: countWords(copy.store.profile.aboutMe) }))
+            },
+            helper: helper ? { version: helper.version, jobs: helper.jobs.length, applications: Object.keys(helper.applications).length, rememberedAnswers: Object.keys(helper.answers).length, lastRefresh: helper.lastRefresh } : "not connected",
+            browser: navigator.userAgent.replace(/^Mozilla\/5\.0 /, "").slice(0, 120),
+            site: window.location.host
+          };
+          try { await navigator.clipboard.writeText(JSON.stringify(report, null, 1)); setBackupMessage("Copied. Paste it in a message to Emmanuel. It has counts only, none of your writing."); } catch { setBackupMessage("Couldn't copy. Take a screenshot of this page instead."); }
+        }}>Copy details for Emmanuel</button>
       </section>
 
       <section className="task-section jobs-form">
