@@ -818,7 +818,6 @@ function CoverageList({ criteria, onAdd }: { criteria: CriterionResult[]; onAdd:
 
 function CriterionExplainer({ text }: { text: string }) {
   const help = explainCriterion(text);
-  if (!help) return null;
   return (
     <details className="jobs-explain">
       <summary>What does this mean?</summary>
