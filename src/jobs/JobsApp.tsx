@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { callHelper, helperInstalled, onHelperPush, type HelperJob, type HelperState, type JobDetails } from "./helper";
+import { explainCriterion } from "./criteriaHelp";
 import { addExampleToStatement, cleanJob, composeExample, coverageOf, writeStatement, type CriterionResult } from "./statementWriter";
 
 // Jobs: a daily list of new NHS jobs (found by the Chrome helper on her laptop), a preview of
@@ -806,10 +807,23 @@ function CoverageList({ criteria, onAdd }: { criteria: CriterionResult[]; onAdd:
         {ordered.map((criterion) => (
           <li key={criterion.text} className={criterion.covered ? "covered" : "missing"}>
             <span aria-hidden="true">{criterion.covered ? "✓" : "○"}</span> {criterion.text}{criterion.essential ? "" : " (desirable)"}
+            <CriterionExplainer text={criterion.text} />
             {!criterion.covered && <AddExample criterion={criterion} onAdd={onAdd} />}
           </li>
         ))}
       </ul>
+    </details>
+  );
+}
+
+function CriterionExplainer({ text }: { text: string }) {
+  const help = explainCriterion(text);
+  if (!help) return null;
+  return (
+    <details className="jobs-explain">
+      <summary>What does this mean?</summary>
+      <p>{help.meaning}</p>
+      <p><strong>Example idea:</strong> {help.idea}</p>
     </details>
   );
 }
