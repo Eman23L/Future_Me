@@ -1929,7 +1929,7 @@ body {
 
 /* Jobs */
 .jobs-app .dashboard-top h1 { overflow-wrap: anywhere; }
-.jobs-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.jobs-toolbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 18px; }
 .jobs-toolbar button, .job-card-actions .secondary-action { min-height: 48px; border-radius: 999px; font-weight: 900; }
 .jobs-filter { margin-top: 18px; flex-wrap: wrap; }
 .jobs-app .reminder-banner { margin-top: 16px; }

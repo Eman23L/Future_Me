@@ -311,6 +311,7 @@
   function pageKind() {
     const body = text(document.body);
     if (document.querySelector("input[type=password]") || /one[- ]time passcode|verification code|enter (the|your) passcode/i.test(body)) return "sign-in";
+    if (/no longer accepting applications|this vacancy (has )?(now )?closed|closed for applications/i.test(body) && !findButton(/mark section as complete|^save & next$/i)) return "closed";
     if (/application (has been|was) (successfully )?submitted|thank you for (submitting|your application)/i.test(body)) return "submitted";
     if (findButton(/^continue draft$/i)) return "draft";
     if (findButton(/^launch application$/i)) return "start";
@@ -324,6 +325,12 @@
 
     if (kind === "sign-in") {
       showPanel("Please sign in to Trac (email, password and the passcode they email you). I'll carry on after that.", { tone: "help" });
+      return "stop";
+    }
+
+    if (kind === "closed") {
+      showPanel("This job has closed and isn't taking applications any more. I've marked it closed in FutureMe, so you can close this tab.", { tone: "help" });
+      await send("markClosed", { vacancyId: application?.vacancyId });
       return "stop";
     }
 

@@ -9,7 +9,7 @@ import { addExampleToStatement, cleanJob, composeExample, coverageOf, writeState
 const STORAGE_KEY = "future-me:jobs:v1";
 const WORD_LIMIT = 1500;
 // Bump with extension/manifest.json so she's told when the Chrome helper needs updating.
-const LATEST_HELPER_VERSION = "0.5.0";
+const LATEST_HELPER_VERSION = "0.6.0";
 const olderVersion = (have: string, want: string) => {
   const a = have.split(".").map(Number);
   const b = want.split(".").map(Number);
@@ -162,7 +162,7 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
     const jobs = (helper?.jobs ?? []).map(cleanJob).filter((job) => !notAJob(job) && (!nursingOnly || NURSING.test(job.title)));
     const applications = helper?.applications ?? {};
     return {
-      new: jobs.filter((job) => !store.skipped[job.vacancyId] && !applications[job.vacancyId]),
+      new: jobs.filter((job) => !job.closed && !store.skipped[job.vacancyId] && !applications[job.vacancyId]),
       applying: jobs.filter((job) => applications[job.vacancyId]),
       skipped: jobs.filter((job) => store.skipped[job.vacancyId] && !applications[job.vacancyId])
     };
@@ -237,6 +237,12 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
         <>
           <div className="jobs-toolbar">
             <button className="secondary-action" onClick={refresh} disabled={Boolean(busy)}>{busy || "Check for new jobs"}</button>
+            <button className="secondary-action" onClick={async () => {
+              setBusy("Checking for closed jobs…");
+              try { setHelper(await callHelper<HelperState>("checkClosed", undefined, 300000)); setError(""); }
+              catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+              finally { setBusy(""); }
+            }} disabled={Boolean(busy)}>Remove closed jobs</button>
             <button className="secondary-action" onClick={() => setView({ name: "profile" })}>Your details</button>
           </div>
           {helper && olderVersion(helper.version, LATEST_HELPER_VERSION) && (
@@ -301,7 +307,7 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
                         saveStore({ ...store, skipped });
                       }}>Bring back</button>
                     )}
-                    {application?.status !== "submitted" && (
+                    {application?.status !== "submitted" && application?.status !== "closed" && !job.closed && (
                       <button className="bottom-action" onClick={() => setView({ name: "apply", job })}>
                         {application ? "Carry on applying" : "Apply now"}
                       </button>
@@ -581,7 +587,7 @@ function ApplyScreen({
 
   const words = wordCount(draft);
   const placeholders = hasPlaceholders(draft);
-  const canApply = Boolean(draft.trim()) && !placeholders && words <= WORD_LIMIT && !opening;
+  const canApply = Boolean(draft.trim()) && !placeholders && words <= WORD_LIMIT && !opening && !details?.closed;
 
   async function apply() {
     setOpening(true);
@@ -610,6 +616,12 @@ function ApplyScreen({
 
       {status && <p className="jobs-status" role="status">{status}</p>}
       {error && <p className="jobs-error" role="alert">{error}</p>}
+      {details?.closed && (
+        <section className="reminder-banner" role="alert">
+          <strong>This job has closed</strong>
+          <span>It's no longer taking applications, so there's no need to apply. Go back to pick another.</span>
+        </section>
+      )}
       {profileMissing && (
         <section className="reminder-banner" role="status">
           <strong>Add your details first</strong>
@@ -853,6 +865,7 @@ function AddExample({ criterion, onAdd }: { criterion: CriterionResult; onAdd: (
 }
 
 function statusLabel(status: string) {
+  if (status === "closed") return "Closed: no longer taking applications";
   if (status === "submitted") return "Submitted ✓";
   if (status === "ready") return "Filled in. Check and submit on Trac";
   return "Filling in on Trac";

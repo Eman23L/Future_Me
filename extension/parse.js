@@ -2,7 +2,7 @@
 // HealthJobsUK content script. Works from link patterns and visible text rather than
 // exact page markup, so small site changes don't break it.
 
-/* exported parseJobList, parseJobPage */
+/* exported parseJobList, parseJobPage, isClosedText */
 
 const JOB_LINK = /\/job\/[^?#]*-v(\d+)/i;
 
@@ -117,9 +117,25 @@ function parseJobPage(doc, baseUrl) {
     /apply online/i.test(a.textContent || "") || /apps\.trac\.jobs\/job-advert/i.test(a.getAttribute("href") || "")
   );
   const closing = lines.join("\n").match(/closing date\s*:?\s*([0-9]{1,2}[\s/-][A-Za-z0-9]{2,9}[\s/-][0-9]{2,4})/i);
+  const closingDate = closing ? cleanText(closing[1]) : "";
   return {
     text: lines.join("\n").slice(0, 40000),
     applyUrl: applyLink ? new URL(applyLink.getAttribute("href"), baseUrl).href : "",
-    closingDate: closing ? cleanText(closing[1]) : ""
+    closingDate,
+    closed: isClosedText(lines.join(" ")) || closingDatePassed(closingDate)
   };
+}
+
+// "No longer accepting applications", "This vacancy has closed", "Closed for applications".
+function isClosedText(text) {
+  return /no longer accepting applications|this (job|vacancy|advert) (has )?(now )?closed|closed for applications|vacancy (has )?(now )?closed|applications (are )?(now )?closed|this job has expired/i.test(text || "");
+}
+
+function closingDatePassed(value) {
+  if (!value) return false;
+  const uk = value.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  const date = uk ? new Date(Number(uk[3].length === 2 ? `20${uk[3]}` : uk[3]), Number(uk[2]) - 1, Number(uk[1])) : new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  date.setHours(23, 59, 59);
+  return date.getTime() < Date.now();
 }
