@@ -132,4 +132,8 @@ assert(!coverageOf("I would love to do it and make it work for it.", [{ text: "B
 const noValues = writeStatement({ title: "Staff Nurse", employer: "Example NHS Trust", text: "Person specification\nEssential criteria\nExcellent communication skills" }, { previousStatement: "I communicate clearly with patients and families every day.\nCaring for patients with dignity and compassion is what drives me every day.", aboutMe: "", alwaysMention: "" });
 assert(/Above all, caring for patients with dignity|Caring for patients with dignity/.test(noValues.statement) && !/\n\nCaring for patients with dignity and compassion is what drives me every day\.\n\nThank you/.test(noValues.statement), `lone caring sentence should be introduced: ${noValues.statement}`);
 assert(!/I am caring for patients with dignity and compassion is/.test(noValues.statement), "full sentences must not get 'I am' added");
+// Section headings aren't criteria; hyphenated "multi-disciplinary" counts as teamwork.
+const headed = readPersonSpec("Person specification\nSkills Abilities & Knowledge\nEssential criteria\nEvidence of multi-disciplinary/multiagency working\nExperience & Knowledge\nDesirable criteria\nInvolvement with IQP");
+assert(headed.map((c) => c.text).join("|") === "Evidence of multi-disciplinary/multiagency working|Involvement with IQP", `headings should be skipped: ${headed.map((c) => c.text).join("|")}`);
+assert(coverageOf("I worked with physios, OTs and social workers as part of the multi-disciplinary team to plan a safe discharge.", headed, "")[0].covered, "multi-disciplinary example should count");
 console.log("\nStatement checks passed.");
