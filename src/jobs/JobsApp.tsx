@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { callHelper, helperInstalled, onHelperPush, type HelperJob, type HelperState, type JobDetails } from "./helper";
 import { explainCriterion } from "./criteriaHelp";
-import { cachedPlace, findHome, findPlace, jobTown, milesBetween } from "./distance";
+import { cachedPlace, findHome, findPlace, jobPoint, milesBetween, namesToLookUp } from "./distance";
 import { addExampleToStatement, cleanJob, composeExample, coverageOf, writeStatement, type CriterionResult } from "./statementWriter";
 
 // Jobs: a daily list of new NHS jobs (found by the Chrome helper on her laptop), a preview of
@@ -26,6 +26,7 @@ type JobsStore = {
   nursingOnly?: boolean;
   home?: { query: string; lat: number; lng: number };
   maxMiles?: number;
+  hideUnknown?: boolean;
 };
 
 // Stray links saved by older helper versions ("More", "Read more") aren't jobs.
@@ -169,12 +170,18 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
   const [geoVersion, setGeoVersion] = useState(0);
   useEffect(() => {
     if (!store.home || !helper) return;
-    const towns = [...new Set(helper.jobs.map((job) => jobTown(cleanJob(job))).filter(Boolean))].filter((town) => cachedPlace(town) === undefined);
+    const seen = new Set<string>();
+    const towns = helper.jobs.flatMap((job) => namesToLookUp(cleanJob(job))).filter(([name, strict]) => {
+      const key = `${strict}:${name.toLowerCase()}`;
+      if (seen.has(key) || cachedPlace(name, strict) !== undefined) return false;
+      seen.add(key);
+      return true;
+    });
     if (!towns.length) return;
     let cancelled = false;
     (async () => {
       for (let i = 0; i < towns.length && !cancelled; i += 6) {
-        await Promise.all(towns.slice(i, i + 6).map((town) => findPlace(town)));
+        await Promise.all(towns.slice(i, i + 6).map(([name, strict]) => findPlace(name, strict)));
         if (!cancelled) setGeoVersion((value) => value + 1);
       }
     })();
@@ -183,7 +190,7 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
 
   const milesTo = useCallback((job: HelperJob): number | null => {
     if (!store.home) return null;
-    const point = cachedPlace(jobTown(job));
+    const point = jobPoint(job);
     return point ? Math.round(milesBetween(store.home, point)) : null;
     // geoVersion: recompute as towns are found
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,16 +202,22 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
     const nearEnough = (job: HelperJob) => {
       if (!store.home) return true;
       const miles = milesTo(job);
-      return miles === null || miles <= maxMiles; // unknown distance stays visible
+      if (miles === null) return !store.hideUnknown; // unknown distance stays visible unless she hides them
+      return miles <= maxMiles;
     };
     const jobs = (helper?.jobs ?? []).map(cleanJob).filter((job) => !notAJob(job) && (!nursingOnly || NURSING.test(job.title)) && nearEnough(job));
     const applications = helper?.applications ?? {};
     return {
-      new: jobs.filter((job) => !job.closed && !store.skipped[job.vacancyId] && !applications[job.vacancyId]),
+      // Nearest first; ones we couldn't place go last.
+      new: jobs
+        .filter((job) => !job.closed && !store.skipped[job.vacancyId] && !applications[job.vacancyId])
+        .map((job, index) => ({ job, index, miles: milesTo(job) }))
+        .sort((a, b) => (store.home ? (a.miles ?? 9999) - (b.miles ?? 9999) : 0) || a.index - b.index)
+        .map(({ job }) => job),
       applying: jobs.filter((job) => applications[job.vacancyId]),
       skipped: jobs.filter((job) => store.skipped[job.vacancyId] && !applications[job.vacancyId])
     };
-  }, [helper, store.skipped, store.nursingOnly, store.home, store.maxMiles, milesTo]);
+  }, [helper, store.skipped, store.nursingOnly, store.home, store.maxMiles, store.hideUnknown, milesTo]);
 
   if (view.name === "profile") {
     return (
@@ -305,6 +318,12 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
           {error && <p className="jobs-error" role="alert">{error}</p>}
 
           <DistanceFilter store={store} onChange={(patch) => saveStore({ ...store, ...patch })} />
+          {store.home && (
+            <label className="jobs-toggle">
+              <input type="checkbox" checked={Boolean(store.hideUnknown)} onChange={(event) => saveStore({ ...store, hideUnknown: event.target.checked })} />
+              Hide jobs where the distance is unknown
+            </label>
+          )}
           <label className="jobs-toggle">
             <input type="checkbox" checked={store.nursingOnly !== false} onChange={(event) => saveStore({ ...store, nursingOnly: event.target.checked })} />
             Nursing &amp; midwifery jobs only
@@ -330,7 +349,7 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
                   <div className="job-card-main">
                     <strong>{job.title}</strong>
                     <span>{[job.employer, job.location].filter(Boolean).join(" · ")}</span>
-                    <small>{[job.band, job.speciality, milesTo(job) !== null ? `${milesTo(job)} miles away` : ""].filter(Boolean).join(" · ")}</small>
+                    <small>{[job.band, job.speciality, milesTo(job) !== null ? `${milesTo(job)} ${milesTo(job) === 1 ? "mile" : "miles"} away` : store.home ? "distance unknown" : ""].filter(Boolean).join(" · ")}</small>
                     {job.salary && <small>{job.salary}</small>}
                     {application && <small className="ready-chip">{statusLabel(application.status)}</small>}
                   </div>
