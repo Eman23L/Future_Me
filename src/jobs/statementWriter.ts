@@ -17,7 +17,7 @@ type Category = "qualifications" | "experience" | "skills" | "knowledge" | "othe
 // Each theme is recognised in both the person spec and her sentences.
 const THEMES: Record<string, RegExp> = {
   communication: /communicat|interpersonal|listen|explain|verbal|written|rapport|handover|reassur|conversation/i,
-  teamwork: /team|multidisciplinary|\bmdt\b|colleague|collaborat|work(ing)? together|independent(ly)?/i,
+  teamwork: /team|multi[- ]?(disciplinary|agency|professional)|inter[- ]?(disciplinary|agency|professional)|partnership working|\bmdt\b|colleague|collaborat|work(ing)? together|independent(ly)?/i,
   compassion: /compassion|empath|kind|dignity|respect|caring|care for|person[- ]cent|patient[- ]cent|holistic|emotional|support(ing|ed)? (women|patients|families|parents)/i,
   standards: /standard|quality|safe(ty)?|governance|polic(y|ies)|guideline|protocol|best practice|infection|escalat|challenge|unacceptable|raise concern|speak(ing)? up/i,
   audit: /audit|research|evidence[- ]based|literature|quality improvement|\bqi\b|review/i,
@@ -93,6 +93,11 @@ export function readPersonSpec(text: string): Criterion[] {
     if (/^(qualifications?( and training)?|education)$/i.test(line)) { category = "qualifications"; continue; }
     if (/^experience$/i.test(line)) { category = "experience"; continue; }
     if (/^(skills?( and abilities)?|abilities)$/i.test(line)) { category = "skills"; continue; }
+    // Section headings like "Skills, Abilities & Knowledge" or "Experience & Knowledge" aren't criteria.
+    if (/^(qualifications?|education|training|experience|skills?|abilities|knowledge|personal (qualities|attributes)|other|additional)(\s*(,|&|and|\/)\s*(qualifications?|education|training|experience|skills?|abilities|knowledge|understanding))*$/i.test(line.replace(/\s*\((desirable|essential)\)\s*$/i, ""))) {
+      category = /experience/i.test(line) ? "experience" : /knowledge/i.test(line) ? "knowledge" : /skill|abilit/i.test(line) ? "skills" : /qualif|education|training/i.test(line) ? "qualifications" : "other";
+      continue;
+    }
     if (/^knowledge$/i.test(line)) { category = "knowledge"; continue; }
     if (/^(additional|other|personal (qualities|attributes)|values|disposition)/i.test(line) && line.split(" ").length <= 3) { category = "other"; continue; }
     if (!markerSeen || line.length < 6 || line.length > 220 || NOTICE.test(line) || line.split(/\s+/).length > 30) continue;

@@ -88,6 +88,10 @@ const HELP: Array<[RegExp, CriterionHelp]> = [
     meaning: "Basing care on up-to-date research and guidelines (e.g. NICE) rather than habit.",
     idea: "A time you used a guideline or research to guide care, or an assignment that changed how you work."
   }],
+  [/\biqp\b|improving quality|quality improvement project/i, {
+    meaning: "IQP usually means a quality improvement project: a small piece of work to make care better, often using audit or the PDSA (Plan, Do, Study, Act) cycle.",
+    idea: "Any audit, QI project or change you were part of on placement or at uni, what you looked at and what changed."
+  }],
   [/audit|quality improvement|\bqi\b|service improvement|improv(e|ing) (standards|services|care)/i, {
     meaning: "Checking how well care is done against a standard, and helping make it better.",
     idea: "An audit (e.g. hand hygiene, falls, documentation) you took part in and what changed."
@@ -115,6 +119,10 @@ const HELP: Array<[RegExp, CriterionHelp]> = [
   [/communicat|interpersonal|listen|verbal|written/i, {
     meaning: "Explaining things clearly, listening well, and writing accurate notes, with patients, families and colleagues.",
     idea: "Explaining a procedure to an anxious patient, or giving a clear SBAR handover."
+  }],
+  [/multi[- ]?(disciplinary|agency|professional)|inter[- ]?(disciplinary|agency|professional)|partnership working|joint working/i, {
+    meaning: "Working with other professions and organisations to care for a patient: doctors, physios, OTs, pharmacists, social workers, GPs, community teams, police or schools (multi-agency).",
+    idea: "A patient whose care involved several teams, e.g. a discharge with physio, OT and social services, or a safeguarding referral, and your part in it."
   }],
   [/team|multidisciplinary|\bmdt\b|work(ing)? independently|collaborat/i, {
     meaning: "Working well with nurses, doctors and other professionals, and also managing your own patients without constant supervision.",
