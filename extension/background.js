@@ -70,6 +70,7 @@ async function refreshJobs() {
   }
   if (found.length) {
     await mergeJobs(found);
+    sweepClosed().catch(() => {});
   } else {
     // Some sites only show results to a normal page load, so load it in a quiet background tab;
     // the HealthJobsUK script reads it and we close the tab again.
@@ -104,9 +105,51 @@ async function jobDetails(vacancyId) {
   const latest = await load();
   if (latest.jobs[vacancyId]) {
     latest.jobs[vacancyId].details = details;
+    if (details.closed) latest.jobs[vacancyId].closed = true;
     await save({ jobs: latest.jobs });
   }
   return details;
+}
+
+async function markClosed({ vacancyId }) {
+  const { jobs, applications } = await load();
+  if (jobs[vacancyId]) jobs[vacancyId].closed = true;
+  if (applications[vacancyId] && applications[vacancyId].status !== "submitted") applications[vacancyId].status = "closed";
+  await save({ jobs, applications });
+  await pushToFutureMe("jobs", await publicState());
+  return true;
+}
+
+// Checks a few open jobs per refresh (oldest first) and marks any that have closed,
+// so her list doesn't fill with jobs she can't apply for.
+async function sweepClosed(limit = 15) {
+  const { jobs, applications } = await load();
+  const open = Object.values(jobs)
+    .filter((job) => !job.closed && applications[job.vacancyId]?.status !== "submitted")
+    .sort((a, b) => (a.checkedAt || a.firstSeen || "").localeCompare(b.checkedAt || b.firstSeen || ""))
+    .slice(0, limit);
+  let changed = false;
+  for (const job of open) {
+    try {
+      const response = await fetch(job.url, { credentials: "include" });
+      const latest = await load();
+      const entry = latest.jobs[job.vacancyId];
+      if (!entry) continue;
+      entry.checkedAt = new Date().toISOString();
+      if (response.status === 404 || response.status === 410) entry.closed = true;
+      else if (response.ok) {
+        const details = await parse("parse-job", await response.text(), job.url);
+        entry.details = details;
+        if (details.closed) entry.closed = true;
+      }
+      if (entry.closed && latest.applications[job.vacancyId] && latest.applications[job.vacancyId].status !== "submitted") latest.applications[job.vacancyId].status = "closed";
+      await save({ jobs: latest.jobs, applications: latest.applications });
+      changed = true;
+    } catch {
+      // try again next time
+    }
+  }
+  if (changed) await pushToFutureMe("jobs", await publicState());
 }
 
 // ---------- applying ----------
@@ -194,7 +237,12 @@ const handlers = {
     const { applications, answers } = await load();
     return { application: applications[vacancyId] || null, answers };
   },
-  applicationStatus: (payload) => setApplicationStatus(payload)
+  applicationStatus: (payload) => setApplicationStatus(payload),
+  markClosed: (payload) => markClosed(payload),
+  async checkClosed() {
+    await sweepClosed(40);
+    return publicState();
+  }
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -202,7 +250,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handler = handlers[message?.type];
   if (!handler) return false;
   // FutureMe's page may only use the FutureMe-facing messages.
-  const pageOnly = ["getState", "refreshJobs", "getJobDetails", "startApplication", "setAnswers", "saveSettings"];
+  const pageOnly = ["checkClosed", "getState", "refreshJobs", "getJobDetails", "startApplication", "setAnswers", "saveSettings"];
   if (message.fromFutureMe && !pageOnly.includes(message.type)) return false;
   Promise.resolve(handler(message.payload || {}, sender))
     .then((result) => sendResponse(result))

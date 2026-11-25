@@ -11,13 +11,14 @@ export type HelperJob = {
   url: string;
   firstSeen?: string;
   lastSeen?: string;
+  closed?: boolean;
 };
 
 export type HelperApplication = {
   vacancyId: string;
   title: string;
   employer: string;
-  status: "filling" | "ready" | "submitted";
+  status: "filling" | "ready" | "submitted" | "closed";
   updatedAt: string;
 };
 
@@ -30,7 +31,7 @@ export type HelperState = {
   jobs: HelperJob[];
 };
 
-export type JobDetails = { text: string; applyUrl: string; closingDate: string };
+export type JobDetails = { text: string; applyUrl: string; closingDate: string; closed?: boolean };
 
 type Reply = { source: "futureme-extension"; id?: string; ok?: boolean; result?: unknown; error?: string; push?: string };
 
