@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { callHelper, helperInstalled, onHelperPush, type HelperJob, type HelperState, type JobDetails } from "./helper";
 import { explainCriterion } from "./criteriaHelp";
+import { cachedPlace, findHome, findPlace, jobTown, milesBetween } from "./distance";
 import { addExampleToStatement, cleanJob, composeExample, coverageOf, writeStatement, type CriterionResult } from "./statementWriter";
 
 // Jobs: a daily list of new NHS jobs (found by the Chrome helper on her laptop), a preview of
@@ -18,7 +19,14 @@ const olderVersion = (have: string, want: string) => {
 };
 
 type Profile = { previousStatement: string; aboutMe: string; alwaysMention: string };
-type JobsStore = { profile: Profile; skipped: Record<string, true>; drafts: Record<string, string>; nursingOnly?: boolean };
+type JobsStore = {
+  profile: Profile;
+  skipped: Record<string, true>;
+  drafts: Record<string, string>;
+  nursingOnly?: boolean;
+  home?: { query: string; lat: number; lng: number };
+  maxMiles?: number;
+};
 
 // Stray links saved by older helper versions ("More", "Read more") aren't jobs.
 const notAJob = (job: HelperJob) => !job.title.trim() || /^(more|more\.{3}|read more|see more|find out more|view|details|apply( now| online)?)$/i.test(job.title.trim());
@@ -157,16 +165,46 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
     }
   }
 
+  // Look up each job town once (cached), a few at a time.
+  const [geoVersion, setGeoVersion] = useState(0);
+  useEffect(() => {
+    if (!store.home || !helper) return;
+    const towns = [...new Set(helper.jobs.map((job) => jobTown(cleanJob(job))).filter(Boolean))].filter((town) => cachedPlace(town) === undefined);
+    if (!towns.length) return;
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < towns.length && !cancelled; i += 6) {
+        await Promise.all(towns.slice(i, i + 6).map((town) => findPlace(town)));
+        if (!cancelled) setGeoVersion((value) => value + 1);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [helper, store.home]);
+
+  const milesTo = useCallback((job: HelperJob): number | null => {
+    if (!store.home) return null;
+    const point = cachedPlace(jobTown(job));
+    return point ? Math.round(milesBetween(store.home, point)) : null;
+    // geoVersion: recompute as towns are found
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.home, geoVersion]);
+
   const lists = useMemo(() => {
     const nursingOnly = store.nursingOnly !== false;
-    const jobs = (helper?.jobs ?? []).map(cleanJob).filter((job) => !notAJob(job) && (!nursingOnly || NURSING.test(job.title)));
+    const maxMiles = store.maxMiles ?? 40;
+    const nearEnough = (job: HelperJob) => {
+      if (!store.home) return true;
+      const miles = milesTo(job);
+      return miles === null || miles <= maxMiles; // unknown distance stays visible
+    };
+    const jobs = (helper?.jobs ?? []).map(cleanJob).filter((job) => !notAJob(job) && (!nursingOnly || NURSING.test(job.title)) && nearEnough(job));
     const applications = helper?.applications ?? {};
     return {
       new: jobs.filter((job) => !job.closed && !store.skipped[job.vacancyId] && !applications[job.vacancyId]),
       applying: jobs.filter((job) => applications[job.vacancyId]),
       skipped: jobs.filter((job) => store.skipped[job.vacancyId] && !applications[job.vacancyId])
     };
-  }, [helper, store.skipped, store.nursingOnly]);
+  }, [helper, store.skipped, store.nursingOnly, store.home, store.maxMiles, milesTo]);
 
   if (view.name === "profile") {
     return (
@@ -266,6 +304,7 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
           )}
           {error && <p className="jobs-error" role="alert">{error}</p>}
 
+          <DistanceFilter store={store} onChange={(patch) => saveStore({ ...store, ...patch })} />
           <label className="jobs-toggle">
             <input type="checkbox" checked={store.nursingOnly !== false} onChange={(event) => saveStore({ ...store, nursingOnly: event.target.checked })} />
             Nursing &amp; midwifery jobs only
@@ -291,7 +330,7 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
                   <div className="job-card-main">
                     <strong>{job.title}</strong>
                     <span>{[job.employer, job.location].filter(Boolean).join(" · ")}</span>
-                    <small>{[job.band, job.speciality].filter(Boolean).join(" · ")}</small>
+                    <small>{[job.band, job.speciality, milesTo(job) !== null ? `${milesTo(job)} miles away` : ""].filter(Boolean).join(" · ")}</small>
                     {job.salary && <small>{job.salary}</small>}
                     {application && <small className="ready-chip">{statusLabel(application.status)}</small>}
                   </div>
@@ -321,6 +360,39 @@ export function JobsApp({ nav }: { nav: React.ReactNode }) {
       )}
       {nav}
     </main>
+  );
+}
+
+function DistanceFilter({ store, onChange }: { store: JobsStore; onChange: (patch: Partial<JobsStore>) => void }) {
+  const [query, setQuery] = useState(store.home?.query ?? "");
+  const [miles, setMiles] = useState(String(store.maxMiles ?? 40));
+  const [message, setMessage] = useState("");
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    const maxMiles = Math.max(1, Math.min(500, Number(miles) || 40));
+    if (!query.trim()) {
+      onChange({ home: undefined, maxMiles });
+      setMessage("Showing jobs anywhere.");
+      return;
+    }
+    setMessage("Finding your area…");
+    const point = await findHome(query);
+    if (!point) {
+      setMessage("Couldn't find that. Try your postcode, e.g. L11 1AB, or just the first part, e.g. L11.");
+      return;
+    }
+    onChange({ home: { query: query.trim(), ...point }, maxMiles });
+    setMessage(`Showing jobs within ${maxMiles} miles of ${query.trim().toUpperCase()}.`);
+  }
+  return (
+    <form className="jobs-distance" onSubmit={save}>
+      <span>Within</span>
+      <input type="number" min={1} max={500} value={miles} onChange={(event) => setMiles(event.target.value)} aria-label="Miles" />
+      <span>miles of</span>
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="your postcode" aria-label="Your postcode or town" />
+      <button type="submit" className="secondary-action">Save</button>
+      {message && <small className="capacity-helper">{message}</small>}
+    </form>
   );
 }
 
