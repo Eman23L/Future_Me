@@ -47,8 +47,10 @@ export async function findHome(query: string): Promise<Point | null> {
 
 const PLACE_TYPES = /City|Town|Village|Suburban Area|Hamlet|Other Settlement/i;
 
-export async function findPlace(name: string): Promise<Point | null> {
-  const key = name.trim().toLowerCase();
+// strict: only accept a city or town with exactly this name (used for names taken from trust titles).
+export async function findPlace(name: string, strict = false): Promise<Point | null> {
+  const key = `${strict ? "strict:" : ""}${name.trim().toLowerCase()}`;
+  const plain = name.trim().toLowerCase();
   if (!key) return null;
   const cache = readCache();
   if (key in cache) return cache[key];
@@ -57,8 +59,8 @@ export async function findPlace(name: string): Promise<Point | null> {
     const results: Array<{ name_1: string; local_type: string; latitude: number; longitude: number }> = body?.result ?? [];
     // Exact name first, then cities and towns before villages ("Hull" → Kingston upon Hull, not Hull Bridge).
     const rank = (type: string) => (/City/i.test(type) ? 0 : /Town/i.test(type) ? 1 : PLACE_TYPES.test(type) ? 2 : 3);
-    const exact = results.find((place) => place.name_1.toLowerCase() === key && PLACE_TYPES.test(place.local_type));
-    const best = exact ?? [...results].sort((a, b) => rank(a.local_type) - rank(b.local_type))[0];
+    const exact = results.find((place) => place.name_1.toLowerCase() === plain && (strict ? rank(place.local_type) <= 1 : PLACE_TYPES.test(place.local_type)));
+    const best = exact ?? (strict ? undefined : [...results].sort((a, b) => rank(a.local_type) - rank(b.local_type))[0]);
     const point = best ? { lat: best.latitude, lng: best.longitude } : null;
     writeCache({ [key]: point });
     return point;
@@ -67,10 +69,39 @@ export async function findPlace(name: string): Promise<Point | null> {
   }
 }
 
-export function cachedPlace(name: string): Point | null | undefined {
+export function cachedPlace(name: string, strict = false): Point | null | undefined {
   const cache = readCache();
-  const key = name.trim().toLowerCase();
+  const key = `${strict ? "strict:" : ""}${name.trim().toLowerCase()}`;
   return key in cache ? cache[key] : undefined;
+}
+
+// Place names inside a trust's name: "Coventry and Warwickshire Partnership NHS Trust" → Coventry, Warwickshire.
+const ORG_WORDS = /\b(nhs|foundation|trust|university|teaching|hospitals?|partnership|integrated|care|health|healthcare|community|mental|services?|board|group|the|of|for|and|ltd|limited|cic|primary|acute|children'?s|women'?s|specialist|royal|general|infirmary|clinical|commissioning|icb|pcn|council|county|city|north|south|east|west|central|greater|upon|on|in)\b/gi;
+export function orgPlaces(employer: string): string[] {
+  const parts = employer.split(/\s+and\s+|,|&|\//i).map((part) => part.replace(ORG_WORDS, " ").replace(/\s+/g, " ").trim()).filter((part) => part.length >= 3);
+  return [...new Set(parts)].slice(0, 3);
+}
+
+// Where a job is: its town, otherwise the first place in its trust's name we can find.
+export function jobPoint(job: { location: string; employer: string }): Point | null | undefined {
+  const town = jobTown(job);
+  if (town) {
+    const point = cachedPlace(town);
+    if (point !== null) return point; // found, or not looked up yet
+  }
+  let pending = false;
+  for (const name of orgPlaces(job.employer)) {
+    const point = cachedPlace(name, true);
+    if (point) return point;
+    if (point === undefined) pending = true;
+  }
+  return pending ? undefined : null;
+}
+
+export function namesToLookUp(job: { location: string; employer: string }): Array<[string, boolean]> {
+  const town = jobTown(job);
+  const names: Array<[string, boolean]> = town ? [[town, false]] : [];
+  return [...names, ...orgPlaces(job.employer).map((name): [string, boolean] => [name, true])];
 }
 
 export function milesBetween(a: Point, b: Point) {
